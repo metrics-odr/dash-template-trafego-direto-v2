@@ -2,8 +2,10 @@
 # -*- coding: utf-8 -*-
 """
 Dashboard de Controle de Tráfego Pago — Funil VSL/tráfego direto (Meta Ads × Compradores).
-Cliente: Larissa Topper — VSL Código da Rainha. Valores do cliente na seção
-"CONFIGURAÇÃO DO CLIENTE" abaixo.
+Os valores do cliente (planilha, produto, taxa, rótulos, metas, worker da IA)
+ficam em `build/config.py` — veja `build/config.example.py` para o modelo e
+comentários de cada campo. Este arquivo (build.py) é a ENGINE, genérica para
+qualquer cliente; não deve ser editado por cliente.
 
 Lê duas abas de uma planilha Google (export CSV público) e emite os REGISTROS
 BRUTOS (meta[] / sales[]) dentro do HTML. Todo o cálculo/filtro/gráfico roda no
@@ -27,55 +29,41 @@ import unicodedata
 import urllib.request
 from datetime import datetime, timezone, timedelta
 
-# ==========================================================================
-# CONFIGURAÇÃO DO CLIENTE — preencha tudo abaixo para um cliente novo
-# ==========================================================================
-# Meta Ads e Compradores ficam na MESMA planilha (mudam só os gids).
-SPREADSHEET_ID = "1wIKzwN2Yy32lFJCB0QHp_weF6xtX-H93f2BeZMZQo8g"
-GID_META  = "1195145852"   # aba Meta Ads
-GID_SALES = "1836439885"   # aba Compradores
+try:
+    import config as cfg
+except ImportError:
+    sys.exit(
+        "ERRO: build/config.py não encontrado.\n"
+        "Copie o modelo e preencha os valores do cliente:\n"
+        "    cp build/config.example.py build/config.py\n"
+        "Veja os comentários em cada campo de build/config.example.py."
+    )
 
-TAX_FACTOR = 1.13806  # imposto Meta: +13,806%
+_REQUIRED = ("SPREADSHEET_ID", "GID_META", "GID_SALES", "MAIN_PRODUCT_PREFIX",
+             "CLIENT_NAME", "MAIN_PRODUCT")
+_missing = [name for name in _REQUIRED if not getattr(cfg, name, "")]
+if _missing:
+    sys.exit(
+        "ERRO: build/config.py está com campo(s) obrigatório(s) vazio(s): "
+        + ", ".join(_missing) + ".\n"
+        "Preencha build/config.py antes de rodar o build (ver build/config.example.py)."
+    )
 
-# Produto principal do funil (base de Vendas/CAC/ConvCHK/Ticket).
-# Casamento por prefixo (sem acento, minúsculas) sobre o nome do produto na planilha.
-# O produto aparece como "Código da Rainha" -> normaliza para "codigo da rainha".
-MAIN_PRODUCT_PREFIX = "codigo da rainha"
-
-# A planilha de Compradores NÃO tem coluna de status de pagamento: "Status" é um
-# estágio de CRM ("Aberto ADV") e "Pagamento" é a bandeira do cartão (visa/pix/...).
-# Como é uma lista de COMPRADORES (toda linha = compra concretizada), contamos todas
-# as linhas como venda paga — ou seja, não filtramos pela coluna Status.
-COUNT_ALL_AS_PAID = True
-
-# Rótulos exibidos na interface (lidos pelo template.html):
-CLIENT_NAME  = "Larissa Topper"
-CLIENT_SUB   = "VSL Código da Rainha"
-TAX_LABEL    = "Imposto Meta ×1,13806"
-MAIN_PRODUCT = "Código da Rainha"
-
-# --- METAS (aba Relatórios) --------------------------------------------------
-# Alvos de desempenho usados APENAS para o código de cor das métricas principais
-# (CAC e ROAS) na aba "Relatórios". Edite aqui quando tiver os números reais.
-#   • ROAS: quanto MAIOR, melhor  -> desempenho = roas / ROAS_TARGET
-#   • CAC : quanto MENOR, melhor  -> desempenho = CAC_TARGET / cac
-# Faixas de cor (sobre o desempenho): <0,70 vermelho · 0,70–0,99 amarelo ·
-#   1,00–1,29 verde · ≥1,30 azul-ciano. As bordas ficam em REPORT_BAND_LOW/HIGH.
-# Exemplos coerentes entre si: ROAS = Ticket / CAC. Com ticket ~R$ 330 observado
-# no funil, ROAS alvo 2,0 equivale a um CAC alvo ~R$ 165. Ajuste ambos quando
-# tiver os números reais da operação (o código de cor usa exatamente estes).
-CAC_TARGET  = 165.0   # CAC alvo (R$ por venda do produto principal)
-ROAS_TARGET = 2.0     # ROAS alvo (Faturamento / Gasto)
-REPORT_BAND_LOW  = 0.70   # abaixo disso = "muito abaixo da meta" (vermelho)
-REPORT_BAND_HIGH = 1.30   # a partir disso = "muito acima da meta" (azul-ciano)
-
-# URL pública do Cloudflare Worker da aba IA Insights (não é secreta — o
-# navegador chama esse endereço para ler/gerar insights). Embutida no build para
-# QUALQUER visitante ver os insights já gerados sem precisar configurar nada no
-# próprio navegador; a senha continua exigida só para GERAR novos insights.
-# Copie na tela do Worker, na Cloudflare (Compute (Workers) → nome do Worker).
-IA_WORKER_URL = "https://larissa-codigodarainha-ia-insights.eduardomezzavilla.workers.dev"
-# ==========================================================================
+SPREADSHEET_ID = cfg.SPREADSHEET_ID
+GID_META = cfg.GID_META
+GID_SALES = cfg.GID_SALES
+TAX_FACTOR = cfg.TAX_FACTOR
+MAIN_PRODUCT_PREFIX = cfg.MAIN_PRODUCT_PREFIX
+COUNT_ALL_AS_PAID = cfg.COUNT_ALL_AS_PAID
+CLIENT_NAME = cfg.CLIENT_NAME
+CLIENT_SUB = cfg.CLIENT_SUB
+TAX_LABEL = cfg.TAX_LABEL
+MAIN_PRODUCT = cfg.MAIN_PRODUCT
+CAC_TARGET = cfg.CAC_TARGET
+ROAS_TARGET = cfg.ROAS_TARGET
+REPORT_BAND_LOW = cfg.REPORT_BAND_LOW
+REPORT_BAND_HIGH = cfg.REPORT_BAND_HIGH
+IA_WORKER_URL = cfg.IA_WORKER_URL
 
 EXPORT_URL = "https://docs.google.com/spreadsheets/d/{sid}/export?format=csv&gid={gid}"
 BRT = timezone(timedelta(hours=-3))   # horário de Brasília (exibição)

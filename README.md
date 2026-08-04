@@ -1,7 +1,8 @@
-# Larissa Topper — Dashboard de Controle de Tráfego Pago (VSL/Tráfego Direto)
+# Dashboard de Controle de Tráfego Pago (VSL/Tráfego Direto) — TEMPLATE
 
 > Este repositório é um **template**. Antes de usar, siga o **CHECKLIST DE NOVO
-> CLIENTE** no topo do `CLAUDE.md`.
+> CLIENTE** no topo do `CLAUDE.md` e preencha `build/config.py` (a partir de
+> `build/config.example.py`) e `config.js` (a partir de `config.example.js`).
 
 Dashboard de BI estática (HTML/CSS/JS + Chart.js) publicada no **GitHub Pages**,
 atualizada a cada ~30 min (GitHub Actions + cron-job.org), **somente leitura** das
@@ -21,7 +22,8 @@ Teste local:
 python build/build.py --meta-file meta.csv --sales-file sales.csv --out dist/index.html
 ```
 
-**URL pública:** `https://eduardomezzavilla.github.io/dashboard-larissa-codigodarainha/`
+**URL pública:** `https://<GITHUB_USERNAME>.github.io/<GITHUB_REPOSITORY>/` (preencha
+`config.js` com os valores reais — ver seção "Configuração" abaixo).
 
 ## Métricas do funil VSL
 
@@ -30,11 +32,11 @@ Gasto · Impressões · **CPM** · Cliques · **CPC** · **CTR** · Page Views �
 Vendas · **CAC** (Gasto/Vendas) · **ConvCHK** (Vendas/Checkouts) · Faturamento ·
 **ROAS** (Faturamento/Gasto) · **Ticket Médio** (Faturamento/Vendas).
 
-- **Produto principal** (base de Vendas / CAC / ConvCHK / Ticket): `Código da Rainha`.
-  Configurável em `MAIN_PRODUCT_PREFIX` (`build/build.py`).
+- **Produto principal** (base de Vendas / CAC / ConvCHK / Ticket): configurável em
+  `MAIN_PRODUCT_PREFIX` (`build/config.py`).
 - **Faturamento / ROAS**: consideram **todos os produtos** do funil (orderbumps e
   upsells inclusos), atribuídos ao tráfego rastreado.
-- **Imposto Meta**: toggle ON aplica o fator configurado em `TAX_FACTOR`.
+- **Imposto Meta**: toggle ON aplica o fator configurado em `TAX_FACTOR` (`build/config.py`).
 
 ## O que a dashboard mostra
 
@@ -53,8 +55,11 @@ tabelas com ordenação/redimensionamento/multi-seleção, cache-bust.
 ## Arquivos
 
 - `build/template.html` — a **engine** (CSS + JS). Não editar por cliente.
-- `build/build.py` — leitura das planilhas + config do cliente (Spreadsheet IDs,
-  gids, imposto, produto principal e rótulos).
+- `build/build.py` — a **engine** de leitura das planilhas. Não editar por cliente.
+- `build/config.py` — **config do cliente** (Spreadsheet ID, gids, imposto,
+  produto principal, rótulos, metas, URL do Worker). Copie de `build/config.example.py`.
+- `config.js` — metadados de publicação (usuário/repo do GitHub) usados como
+  referência para os placeholders na documentação. Copie de `config.example.js`.
 - `.github/workflows/deploy.yml` — build + deploy no Pages.
 - `.github/workflows/deploy-worker.yml` — deploy automático do Worker da IA Insights.
 - `ia-worker/worker.js` — backend da aba IA Insights (engine, genérico).

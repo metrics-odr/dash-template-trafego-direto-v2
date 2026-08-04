@@ -1,7 +1,7 @@
 # Ativação + configuração do cron-job.org (TEMPLATE)
 
-> owner/repo: `eduardomezzavilla/dashboard-larissa-codigodarainha` · URL do Pages:
-> `https://eduardomezzavilla.github.io/dashboard-larissa-codigodarainha/`. O **token
+> owner/repo: `<GITHUB_USERNAME>/<GITHUB_REPOSITORY>` · URL do Pages:
+> `https://<GITHUB_USERNAME>.github.io/<GITHUB_REPOSITORY>/`. O **token
 > nunca é comitado** no repositório: ele vai apenas no cron-job.org.
 
 ## Passo 1 — Colocar na branch `main` (uma vez)
@@ -10,14 +10,14 @@
 Faça o merge para a `main`. Na 1ª execução o workflow habilita o GitHub Pages
 automaticamente (`actions/configure-pages` com `enablement: true`).
 
-URL pública após publicar: `https://eduardomezzavilla.github.io/dashboard-larissa-codigodarainha/`
+URL pública após publicar: `https://<GITHUB_USERNAME>.github.io/<GITHUB_REPOSITORY>/`
 
 Disparar a 1ª execução na mão: aba **Actions** → *Build & Deploy Dashboard* → **Run workflow**.
 
 ## Passo 2 — Token (fine-grained, recomendado)
 
 GitHub → *Settings* → *Developer settings* → **Fine-grained tokens** → *Generate*:
-- Repository access: **Only select repositories → `dashboard-larissa-codigodarainha`**
+- Repository access: **Only select repositories → `<GITHUB_REPOSITORY>`**
 - Permissions → **Actions: Read and write**
 
 Guarde o token; ele vai só no cron-job.org.
@@ -26,7 +26,7 @@ Guarde o token; ele vai só no cron-job.org.
 
 ### URL
 ```
-https://api.github.com/repos/eduardomezzavilla/dashboard-larissa-codigodarainha/actions/workflows/deploy.yml/dispatches
+https://api.github.com/repos/<GITHUB_USERNAME>/<GITHUB_REPOSITORY>/actions/workflows/deploy.yml/dispatches
 ```
 ### Método
 ```

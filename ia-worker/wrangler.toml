@@ -1,4 +1,4 @@
-name = "larissa-codigodarainha-ia-insights"
+name = "nomecliente-ia-insights"   # TEMPLATE: troque "nomecliente" pelo nome do Worker (ver SETUP-IA.md, passo A.1.6)
 main = "worker.js"
 compatibility_date = "2026-01-01"
 
