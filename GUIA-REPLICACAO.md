@@ -13,9 +13,9 @@ aconteceram). O código-fonte canônico e completo está em **`build/template.ht
 
 ```
 Google Sheets (2+ abas)  --export CSV público-->  build/build.py  (Python, só stdlib)
-        │                                                 │ lê, limpa, qualifica, mascara PII
+        │                                                 │ lê, limpa, atribui, mascara PII
         │                                                 ▼
-        │                                    injeta REGISTROS BRUTOS (leads[]/meta[]) em JSON
+        │                                    injeta REGISTROS BRUTOS (meta[]/sales[]) em JSON
         │                                                 ▼
         └──────────────────────────────────────>  build/template.html  → dist/index.html
                                                           │  (todo cálculo/filtro/gráfico é no navegador)
@@ -31,9 +31,11 @@ imposto, tema) é recalculado no navegador a partir da mesma fonte. Isso dá
 interatividade total (BI) sem servidor e garante que KPIs, gráficos e tabelas
 **nunca divergem** (todos partem da mesma base filtrada).
 
-Para adaptar a um novo relatório: troque os `gid`/colunas e o critério de
-qualificação em `build.py`, ajuste os KPIs/colunas no template. A "engine" de
-tabelas/gráficos/filtros abaixo é reutilizável sem mudanças.
+Para adaptar a um novo relatório: troque os `gid`/colunas e a regra de produto
+principal/atribuição em `build/config.py` (e nos aliases de `header_index` em
+`build.py`, se as colunas tiverem nomes muito diferentes), ajuste os
+KPIs/colunas no template. A "engine" de tabelas/gráficos/filtros abaixo é
+reutilizável sem mudanças.
 
 ---
 
@@ -44,16 +46,25 @@ Responsabilidades (stdlib apenas — `urllib`, `csv`, `json`, `re`):
 - `fetch_csv(url)` / `read_csv_file(path)` — busca o CSV (ao vivo no Actions) ou lê local (teste).
 - `header_index(header, aliases, fallback)` — acha colunas por nome (com fallback posicional), robusto a mudanças de ordem.
 - `to_float` (aceita `R$ 1.234,56`), `parse_date` (vários formatos → `YYYY-MM-DD`).
-- `is_qualified(bucket)` — **o critério do relatório** (aqui: faturamento ≥ 30 mil).
-- `mask_email` / `mask_phone` / `first_last_initial` — **mascara PII** (a página é pública).
-- Emite `{"build":{...}, "leads":[...], "meta":[...]}` e substitui os placeholders
-  `__DATA_JSON__`, `__BUILD_ID__`, `__GENERATED_BRT__` no template.
+- `is_main_product(prod)` — casa o produto principal por prefixo (`MAIN_PRODUCT_PREFIX`
+  em `build/config.py`); `is_paid(status)` — só usado se `COUNT_ALL_AS_PAID=False`.
+- `mask_email` / `first_last_initial` — **mascara PII** (a página é pública).
+- Emite `{"build":{...}, "meta":[...], "sales":[...], "ad_links":{...}, "briefings":{...}}`
+  e substitui os placeholders `__DATA_JSON__`, `__BUILD_ID__`, `__GENERATED_BRT__` no template.
+- Valores do cliente (spreadsheet, gids, regras de negócio, rótulos, metas) vêm
+  de `build/config.py`, importado no topo do arquivo — `build.py` em si é a
+  **engine**, genérica, e não muda por cliente.
 
-Registro de lead: `{d,src,plat,camp,adset,ad,prof,bucket,q,utm,nm,em,ph}`.
-Registro de meta: `{d,camp,adset,ad,sp,im,cl,ml}`.
+Registro de meta (aba Meta Ads): `{d,camp,adset,ad,sp,im,cl,pv,ck}`
+(dia, campanha, conjunto, anúncio, gasto, impressões, cliques, page views, checkouts).
+Registro de sale (aba Compradores): `{d,camp,adset,ad,prod,val,main,meta,nm,em}`
+(dia, campanha/conjunto/anúncio — do Meta quando casa, senão da UTM da venda —,
+produto, valor/faturamento, `main`=1 se é o produto principal, `meta`=1 se a venda
+casou com uma linha real do Meta, nome e e‑mail mascarados).
 
-> **PII:** como o GitHub Pages é público, e‑mail e telefone são mascarados no
-> build. Para exibir contatos completos, use repositório/Pages **privado** (plano pago).
+> **PII:** como o GitHub Pages é público, o e‑mail é mascarado (e o nome reduzido a
+> "Primeiro Ú.") no build. Para exibir contatos completos, use repositório/Pages
+> **privado** (plano pago).
 
 ---
 
@@ -94,7 +105,7 @@ const cmuted=()=>cvar('--muted'), cink=()=>cvar('--ink'), cgrid=()=>cvar('--grid
 
 ```js
 const STATE = {
-  page:'geral', from, to, preset:'todo', tax:false,
+  page:'geral', from:B.date_min, to:B.date_max, preset:'todo', tax:true,
   selDays:new Set(),                       // filtro por data (multi, Ctrl)
   mSelC:new Set(), mSelA:new Set(), mSelAd:new Set(),  // filtro cruzado (Campanha/Conjunto/Anúncio)
   sort:{}, colw: JSON.parse(localStorage.getItem('dm_colw')||'{}'),
@@ -107,8 +118,8 @@ const taxf = ()=> STATE.tax ? TAX : 1;     // imposto Meta
 function dateActive(d){ if(!d) return false;
   if(STATE.selDays.size) return STATE.selDays.has(d);
   return (!STATE.from||d>=STATE.from) && (!STATE.to||d<=STATE.to); }
-const leadsActive=()=>LEADS.filter(l=>dateActive(l.d));
-const metaActive =()=>META.filter(m=>dateActive(m.d));
+const metaActive  = ()=> META.filter(m=>dateActive(m.d));
+const salesActive = ()=> SALES.filter(s=>dateActive(s.d));
 ```
 
 **Presets de data** (topbar): `hoje, ontem, 3/7/14/30 dias, este mês, mês passado,
@@ -116,15 +127,29 @@ todo período` — cada um devolve `[from,to]` calculado a partir de `B.today`.
 
 **Agregação** (reconstrói SEMPRE da fonte filtrada — nunca tabela-de-tabela):
 ```js
-function buildAgg(fL,fM,dim){ const m={}, g=k=>m[k]||(m[k]={sp:0,im:0,cl:0,leads:0,mqls:0});
-  fM.forEach(r=>{const a=g(r[dim]); a.sp+=r.sp; a.im+=r.im; a.cl+=r.cl;});
-  fL.forEach(r=>{const a=g(r[dim]); a.leads+=1; a.mqls+=r.q;}); return m; }
-function derive(a){ const g=a.sp*taxf(); return { gasto:g, cpm:a.im?g/a.im*1000:null,
-  ctr:a.im?a.cl/a.im:null, cpc:a.cl?g/a.cl:null, convf:a.cl?a.leads/a.cl:null,
-  cpl:a.leads?g/a.leads:null, cpmql:a.mqls?g/a.mqls:null, tx:a.leads?a.mqls/a.leads:null, ...a }; }
+function newBucket(){return {sp:0,im:0,cl:0,pv:0,ck:0,vendas:0,vendasM:0,fat:0};}
+function addSales(a,r){ a.vendas+=r.main; a.vendasM+=(r.main&&r.meta)?1:0; a.fat+=r.val; }
+function buildAgg(fS,fM,dim){
+  const m={}; const get=k=>m[k]||(m[k]=newBucket());
+  fM.forEach(r=>{const a=get(r[dim]); a.sp+=r.sp; a.im+=r.im; a.cl+=r.cl; a.pv+=r.pv; a.ck+=r.ck;});
+  fS.forEach(r=>{const a=get(r[dim]); addSales(a,r);});
+  return m;
+}
+function derive(a){
+  const g=a.sp*taxf();
+  return {gasto:g, cpm:a.im?g/a.im*1000:null, ctr:a.im?a.cl/a.im:null, cpc:a.cl?g/a.cl:null,
+    cpv:a.pv?g/a.pv:null, cr:a.cl?a.pv/a.cl:null,               // CR = Page Views / Cliques
+    cpic:a.ck?g/a.ck:null, vischk:a.pv?a.ck/a.pv:null,
+    convchk:a.ck?a.vendasM/a.ck:null,                           // Vendas(Meta) / Checkouts
+    cac:a.vendas?g/a.vendas:null, roas:g?a.fat/g:null, ticket:a.vendas?a.fat/a.vendas:null};
+}
 ```
-Regra de ouro: **métricas acumulativas somam** (impr, cliques, leads, gasto…);
-**derivadas recalculam dos totais** (CTR=cliques/impr etc.) — nunca somar percentuais.
+Regra de ouro: **métricas acumulativas somam** (impressões, cliques, page views,
+checkouts, gasto, vendas, faturamento…); **derivadas recalculam dos totais**
+(CTR=cliques/impressões etc.) — nunca somar percentuais. `vendas` = compras do
+produto principal no escopo; `vendasM` = as que também casaram com o Meta
+(base das taxas de conversão do funil pago); `fat` = faturamento de todos os
+produtos (orderbumps/upsells inclusos).
 
 ---
 
@@ -134,11 +159,11 @@ Cada tabela hierárquica é montada de um **escopo que exclui a própria dimens�
 que as linhas irmãs continuem visíveis e o usuário possa **Ctrl+clicar várias** (OR):
 
 ```js
-function metaScope(ex){ let fL=leadsActive().filter(l=>l.src==='meta'), fM=metaActive();
-  if(ex!=='C'&&STATE.mSelC.size){ fL=fL.filter(r=>STATE.mSelC.has(r.camp)); fM=fM.filter(r=>STATE.mSelC.has(r.camp)); }
-  if(ex!=='A'&&STATE.mSelA.size){ fL=fL.filter(r=>STATE.mSelA.has(r.adset)); fM=fM.filter(r=>STATE.mSelA.has(r.adset)); }
-  if(ex!=='D'&&STATE.mSelAd.size){ fL=fL.filter(r=>STATE.mSelAd.has(r.ad)); fM=fM.filter(r=>STATE.mSelAd.has(r.ad)); }
-  return {fL,fM}; }
+function metaScope(ex){ let fM=metaActive(), fS=salesActive().filter(s=>s.meta);   // só Meta Ads
+  if(ex!=='C'&&STATE.mSelC.size){ fM=fM.filter(r=>STATE.mSelC.has(r.camp)); fS=fS.filter(r=>STATE.mSelC.has(r.camp)); }
+  if(ex!=='A'&&STATE.mSelA.size){ fM=fM.filter(r=>STATE.mSelA.has(r.adset)); fS=fS.filter(r=>STATE.mSelA.has(r.adset)); }
+  if(ex!=='D'&&STATE.mSelAd.size){ fM=fM.filter(r=>STATE.mSelAd.has(r.ad)); fS=fS.filter(r=>STATE.mSelAd.has(r.ad)); }
+  return {fM,fS}; }
 // KPIs/funil/gráficos/tabela diária = metaScope(null) (todas as seleções aplicadas)
 // tabela Campanhas = metaScope('C'); Conjuntos = metaScope('A'); Anúncios = metaScope('D')
 
@@ -177,8 +202,9 @@ Recursos implementados (ver `renderTable` em `template.html`):
 - Dimensão nunca truncada (`td.dim{white-space:normal;word-break:break-word}`),
   métricas `nowrap` à direita, nulo = `-`.
 
-Ordem de colunas das tabelas de resultado (padrão do cliente):
-`Data · Dia · Gasto · CPM · CTR · ConvForm(Leads/Cliques) · Leads · CPL · Tx‑MQL · MQLs · CPMQL`
+Ordem de colunas das tabelas de resultado (padrão do funil VSL):
+`Data · Dia · Gasto · CPM · CTR · Page Views · CPV · CR · Checkouts · CPIC · VisCHK ·
+Vendas · CAC · ConvCHK · Faturamento · ROAS · Ticket`
 (nas hierárquicas troca Data/Dia pela dimensão). **Tabela diária: último dia no topo**
 (`daily(...).reverse()`).
 
@@ -186,12 +212,12 @@ Ordem de colunas das tabelas de resultado (padrão do cliente):
 
 ## 7. Gráficos (Chart.js 4, via CDN)
 
-- **Combinado diário** (`comboChart`): barras Leads/MQLs no eixo `y` + linhas
-  Gasto(vermelha)/CPL(preta=`cink()`)/CPMQL(amarela) no eixo `y1` (R$). É o único
-  lugar com 2 eixos, por exigência do cliente.
+- **Combinado diário** (`comboChart`): barra Vendas no eixo `y` + linhas
+  Gasto/Faturamento no eixo `y1` (R$) + linha ROAS num terceiro eixo `y2`. É o
+  único gráfico com 3 eixos.
 - **Barras horizontais** (`hbar`): Top N, rótulo de valor no fim da barra (plugin
   `barLabels`), nomes completos (regra: nunca truncar; Top 10 em vez de cortar).
-- **Par Tabela+Gráfico** (`lineChart`): linha de CPMQL/CPL por dia **colada** logo
+- **Par Tabela+Gráfico** (`lineChart`): linha de CAC por dia **colada** logo
   abaixo de cada tabela hierárquica (`.table-chart-pair`, zero gap), refletindo o filtro.
 - Cores de texto/grade lidas do tema (`cmuted/cink/cgrid`) e re-render ao trocar tema.
 
@@ -229,8 +255,10 @@ Ordem de colunas das tabelas de resultado (padrão do cliente):
 
 ## 9. Como adaptar para um novo relatório (passo a passo)
 
-1. `build.py`: troque `SPREADSHEET_ID`, `GID_*`, o `header_index` (colunas), o
-   `is_qualified` (critério do relatório) e o `TAX_FACTOR` se preciso.
+1. `build/config.py`: troque `SPREADSHEET_ID`, `GID_*`, `MAIN_PRODUCT_PREFIX`
+   (critério de produto principal) e `TAX_FACTOR`. Se as colunas da planilha
+   tiverem nomes muito diferentes, ajuste os aliases em `header_index` dentro
+   de `build/build.py`.
 2. `template.html`: ajuste os KPIs (nível 1/2), os rótulos das colunas e quais
    dimensões existem (Campanha/Conjunto/Anúncio, ou outras). A engine de tabela,
    filtros, heatmap e gráficos não muda.

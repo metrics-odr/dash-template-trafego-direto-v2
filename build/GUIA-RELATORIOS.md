@@ -97,7 +97,7 @@ estrutura por 1–2 dias ruins; priorize tendência sobre valor absoluto.
 
 ## Metas e código de cor (só CAC e ROAS)
 
-Metas em `build/build.py` (`CAC_TARGET`, `ROAS_TARGET`); vêm no metrics JSON em
+Metas em `build/config.py` (`CAC_TARGET`, `ROAS_TARGET`); vêm no metrics JSON em
 `metas`. Desempenho: ROAS `valor/meta`; CAC `meta/valor`. Faixas: `<0,70`
 vermelho · `0,70–0,99` amarelo · `1,00–1,29` verde · `≥1,30` ciano. **Não repita
 o código de cor no texto** — ele já aparece nos cards/tabelas; o briefing
