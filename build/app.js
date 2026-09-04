@@ -370,11 +370,14 @@ function metaScope(ex){ let fM=metaActive(), fS=salesActive().filter(s=>s.meta);
   if(ex!=='A'&&STATE.mSelA.size){ fM=fM.filter(r=>STATE.mSelA.has(r.adset)); fS=fS.filter(r=>STATE.mSelA.has(r.adset)); }
   if(ex!=='D'&&STATE.mSelAd.size){ fM=fM.filter(r=>STATE.mSelAd.has(r.ad)); fS=fS.filter(r=>STATE.mSelAd.has(r.ad)); }
   return {fM,fS}; }
+/* Cada dimensão (campanha/conjunto/anúncio) tem seu próprio conjunto de seleção,
+   combinados em AND por metaScope. Um clique aqui só mexe no conjunto da própria
+   dimensão — nunca limpa a seleção das outras tabelas (ver botões ✕ Filtro,
+   que limpam uma dimensão de cada vez, e o "Remover Filtros" geral, que limpa tudo). */
 function selDim(dim,key,ctrl){
-  const sets={C:STATE.mSelC,A:STATE.mSelA,D:STATE.mSelAd}, s=sets[dim];
+  const s={C:STATE.mSelC,A:STATE.mSelA,D:STATE.mSelAd}[dim];
   if(ctrl){ s.has(key)?s.delete(key):s.add(key); }
-  else { const sole=s.has(key)&&s.size===1&&!Object.entries(sets).some(([k2,x])=>k2!==dim&&x.size);
-    Object.values(sets).forEach(x=>x.clear()); if(!sole) s.add(key); }
+  else { const sole=s.has(key)&&s.size===1; s.clear(); if(!sole) s.add(key); }
   renderMeta();
 }
 function metaPrevTotals(pw){
@@ -809,6 +812,10 @@ document.getElementById('periodPop').addEventListener('click',e=>e.stopPropagati
 document.addEventListener('click',()=>{ if(ppIsOpen()) ppClose(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&ppIsOpen()) ppClose(); });
 document.getElementById('clearBtn').addEventListener('click',()=>{ STATE.mSelC.clear();STATE.mSelA.clear();STATE.mSelAd.clear();STATE.selDays.clear(); applyPreset('mes'); });
+/* botões ✕ Filtro de cada tabela (Campanhas/Conjuntos/Anúncios): limpam só a própria dimensão */
+document.getElementById('clearCampBtn').addEventListener('click',()=>{ STATE.mSelC.clear(); renderMeta(); });
+document.getElementById('clearAdsetBtn').addEventListener('click',()=>{ STATE.mSelA.clear(); renderMeta(); });
+document.getElementById('clearAdBtn').addEventListener('click',()=>{ STATE.mSelAd.clear(); renderMeta(); });
 document.getElementById('refreshBtn').addEventListener('click',function(){ this.classList.add('loading'); location.href=location.pathname+'?t='+Date.now()+location.hash; });
 
 /* IA Insights config + geração */
