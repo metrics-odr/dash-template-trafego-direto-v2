@@ -35,7 +35,7 @@ GID_SALES = ""         # ex.: "222222222"  (aba Compradores)
 # Fator de imposto aplicado sobre o gasto do Meta Ads quando o toggle
 # "Imposto Meta" estiver ligado na dashboard. Use 1.0 se o cliente não tiver
 # imposto a considerar.
-TAX_FACTOR = 1.0   # ex.: 1.13806 (equivale a +13,806%)
+TAX_FACTOR = 1.13806   # padrão do template (equivale a +13,806%); use 1.0 se o cliente não tiver imposto
 
 # Produto principal do funil (base de Vendas/CAC/ConvCHK/Ticket). Casamento
 # por PREFIXO, sem acento e em minúsculas, sobre o nome do produto que
@@ -54,7 +54,7 @@ COUNT_ALL_AS_PAID = True
 # ==========================================================================
 CLIENT_NAME = ""    # ex.: "Nome do Cliente" — aparece no topo do menu lateral
 CLIENT_SUB = ""     # ex.: "VSL Nome do Funil" — subtítulo abaixo do nome
-TAX_LABEL = ""       # ex.: "Imposto Meta ×1,13806" — rótulo do toggle de imposto
+TAX_LABEL = "Imposto Meta ×1,13806"       # rótulo do toggle de imposto (ajuste se TAX_FACTOR mudar)
 MAIN_PRODUCT = ""    # ex.: "Nome do Produto" — nome de exibição do produto principal
 
 # ==========================================================================
