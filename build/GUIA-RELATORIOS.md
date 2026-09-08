@@ -57,10 +57,8 @@
      todo`) **do zero**, a partir dos números atuais de `relatorios_metrics.json`.
      Não copie/cole texto de execuções anteriores — releia os dados e redija de
      novo a cada execução, mesmo que a conclusão continue parecida.
-   - Siga o **Guia de interpretação** e a **Profundidade esperada por
-     período** abaixo — cada um dos 9 períodos pede um tipo de leitura e de
-     recomendação diferente, não é o mesmo texto com números trocados.
-     Atualize `generated_at` para a data/hora BRT atual (`DD/MM/AAAA HH:MM`).
+   - Siga o **Guia de interpretação** abaixo. Atualize `generated_at` para a
+     data/hora BRT atual (`DD/MM/AAAA HH:MM`).
 5. **Commit + push** de `build/relatorios.json` na `main`. O deploy automático
    (~30 min) embute o arquivo no site; a aba passa a exibir o texto novo.
 6. **Verificação obrigatória** (uma execução anterior falhou nesse ponto sem
@@ -103,55 +101,6 @@ Heurísticas: CTR baixo + ROAS/CAC bons = anúncio qualifica (não mexer). CR ba
 cai só num conjunto = público daquele conjunto. Volume baixo = ruído: não corte
 estrutura por 1–2 dias ruins; priorize tendência sobre valor absoluto.
 
-### Ordem de leitura recomendada
-
-Antes de escrever a conclusão, percorra o funil **na ordem** (Gasto →
-Impressões → Cliques → Page Views → Checkouts → Vendas → Faturamento) e
-identifique **em qual etapa a eficiência mudou primeiro** — a etapa que piora
-"antes" das outras costuma ser a causa raiz; as que pioram "depois" dela são
-efeito cascata, não causa. Só depois de achar a etapa de origem escreva a
-recomendação — recomendação sem etapa de origem identificada é sinal de que
-a leitura ficou superficial.
-
-Compare sempre **tendência**, não só o valor do período isolado: uma métrica
-ruim mas estável (mesmo patamar dos períodos anteriores) pede leitura
-diferente de uma métrica que **piorou** frente ao período anterior. Diga
-explicitamente se algo é "novo" (mudou agora, investigar o gatilho) ou
-"crônico" (sempre foi assim, já é a operação normal dessa estrutura).
-
-## Profundidade esperada por período
-
-Os 9 períodos não são a mesma análise com números diferentes — cada faixa de
-tempo pede um tipo de leitura e um horizonte de ação diferente. Calibre o
-nível de detalhe e o tipo de recomendação por isso:
-
-- **`hoje` / `ontem`** (leitura tática, curto prazo): foco no que aconteceu
-  nas últimas 24h. Compare com o dia anterior **e** com a média dos últimos
-  7 dias (não só o dia isolado) para saber se é oscilação normal ou mudança
-  real. Aponte anomalias pontuais (pico/queda de CTR, CPM disparando,
-  checkout parado). Ações sugeridas aqui são de **execução imediata**
-  (pausar hoje, subir orçamento amanhã, checar pixel agora) — evite
-  recomendação estrutural de médio prazo nesses dois períodos.
-- **`3d` / `7d`** (tendência de curto prazo): já dá para falar em tendência,
-  não só evento pontual. Compare o período com o **período equivalente
-  anterior** (ex.: 7d atual vs. os 7d imediatamente anteriores), não só com
-  a média histórica. Aqui é onde cabem decisões de **escalar/cortar
-  estrutura** com mais confiança — volume já permite julgar.
-- **`14d` / `30d` / `mes` / `mespass`** (leitura estratégica de médio prazo):
-  compare mês corrente com o anterior (`mes` vs. `mespass`) e aponte
-  sazonalidade ou mudanças de padrão (dia da semana, feriado, mudança de
-  criativo/oferta). Recomendações aqui podem ser **estruturais** (criar
-  conjunto novo, testar público, revisar oferta/ticket) — não só ajustes de
-  verba.
-- **`todo`** (visão histórica consolidada): não repita o que já foi dito nos
-  outros períodos — sintetize **aprendizado acumulado**: quais estruturas
-  historicamente performam melhor, qual foi a trajetória de CAC/ROAS desde o
-  início, o que já foi tentado e não funcionou (para não repetir erro).
-
-Nunca copie o mesmo parágrafo entre períodos trocando só o número — se dois
-períodos realmente contam a mesma história, diga isso explicitamente
-("mesma tendência do 7d se confirma no 14d") em vez de reescrever o óbvio.
-
 ## Metas e código de cor (só CAC e ROAS)
 
 Metas em `build/config.py` (`CAC_TARGET`, `ROAS_TARGET`); vêm no metrics JSON em
@@ -183,31 +132,6 @@ Não invente números que não estejam no metrics JSON. Ao citar um anúncio (ex
 "AD07"), **sempre** diga também a campanha (e o conjunto, se relevante) — o
 nome do anúncio sozinho não identifica a estrutura, já que o mesmo nome pode
 rodar em campanhas diferentes.
-
-### Estrutura mínima de cada recomendação
-
-Toda recomendação (qualquer uma das 4 tags) deve responder, no próprio texto,
-a estas quatro perguntas — sem seções separadas, só integrado na frase:
-
-1. **O quê** — a ação concreta (subir verba, pausar, testar novo criativo,
-   duplicar estrutura), nunca só "monitorar de perto" sem dizer o que fazer
-   com o resultado.
-2. **Onde** — campanha/conjunto/anúncio específico (nunca uma recomendação
-   genérica "no geral" quando dá para apontar a estrutura exata).
-3. **Tamanho/prazo** — quando fizer sentido, quantifique (ex.: "+20% de
-   verba", "pausar após mais 2 dias sem venda", "esperar bater 1 CAC de
-   gasto antes de decidir"). Evite recomendação vaga tipo "ajustar aos
-   poucos" sem dizer quanto ou até quando.
-4. **Critério de revisão** — quando essa decisão deve ser reavaliada (ex.:
-   "reavaliar no relatório de amanhã", "se CAC continuar subindo por mais
-   3 dias, cortar"). Toda recomendação tem uma data/gatilho implícito de
-   checagem — não é uma decisão para sempre.
-
-Exemplo ruim (evitar): "O conjunto X está performando bem, vale continuar
-observando." — não diz o quê fazer, nem quanto, nem quando reavaliar.
-Exemplo bom: "`Escalar` — conjunto X (campanha Y) sustenta CAC 15% abaixo da
-meta há 5 dias com gasto já acima de 2x o CAC: subir verba em ~20% e reavaliar
-em 3 dias; se CAC piorar acima da meta, voltar ao patamar anterior."
 
 ## Formato de `build/relatorios.json`
 
