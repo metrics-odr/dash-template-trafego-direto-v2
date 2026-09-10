@@ -1,11 +1,17 @@
-# Aba "IA Insights" — backend (Cloudflare Worker)
+# Backend de IA (Cloudflare Worker) — opcional/legado
 
-A aba **IA Insights** manda os dados do funil para um **Cloudflare Worker**, que
-chama a IA (Claude) e devolve os insights. A **chave da Anthropic** e a **senha**
-ficam como *secrets* do Worker — nunca na página pública. A página só guarda, no
-seu navegador, a **URL do Worker** e a **senha** que você digita.
+> **Este backend não tem mais uma aba própria no dashboard.** O que existia (uma
+> aba "IA Insights" com botão "Gerar insights") foi substituído pelo card
+> **Saúde do funil** (sem IA) e pelo **Briefing do Gestor** pré-gerado por uma
+> Routine — ver "IA Insights (legado)" em `CLAUDE.md`. Este guia fica aqui como
+> infraestrutura reaproveitável para quem quiser reativar a geração de insights
+> ao vivo (chamando o Worker diretamente ou reintroduzindo uma UI).
 
-> Nada roda sozinho: a IA só é chamada quando você clica em **Gerar insights**.
+Este backend manda os dados do funil para um **Cloudflare Worker**, que chama a
+IA (Claude) e devolve os insights. A **chave da Anthropic** e a **senha** ficam
+como *secrets* do Worker — nunca na página pública.
+
+> Nada roda sozinho: a IA só é chamada quando alguém faz um POST para o Worker.
 
 ## Opção A — Automático via GitHub Actions (recomendado)
 

@@ -18,6 +18,8 @@ Ordem para colocar um cliente novo no ar. Cada item aponta o arquivo e o marcado
    `build/config.py` e preencha (comentado campo a campo no próprio arquivo):
    - `SPREADSHEET_ID`, `GID_META`, `GID_SALES` (planilha do cliente)
    - `TAX_FACTOR`, `MAIN_PRODUCT_PREFIX`, `COUNT_ALL_AS_PAID` (regras de negócio)
+   - `UPSELL_PRODUCT_PREFIX`/`UPSELL_SPLIT_VALUE`/`UPSELL_USL_LABEL`/`UPSELL_DSL_LABEL`
+     (OPCIONAL — só se o funil tiver upsell/downsell pós-compra do mesmo produto)
    - `CLIENT_NAME`, `CLIENT_SUB`, `TAX_LABEL`, `MAIN_PRODUCT` (rótulos exibidos)
    - `CAC_TARGET`, `ROAS_TARGET`, `REPORT_BAND_LOW`, `REPORT_BAND_HIGH` (metas da aba Relatórios)
 2. [ ] **Este arquivo (`CLAUDE.md`)** — preencher a seção "Fontes de dados" abaixo
@@ -38,30 +40,22 @@ Ordem para colocar um cliente novo no ar. Cada item aponta o arquivo e o marcado
 6. [ ] **GitHub Pages** — confirmar que o workflow `.github/workflows/deploy.yml`
    está na branch `main` e que o Pages foi habilitado (ele se autoconfigura na
    1ª execução via `actions/configure-pages`).
-7. [ ] **Worker da IA Insights** — criar um Worker novo na Cloudflare (nome
-   próprio do cliente) e ajustar `ia-worker/wrangler.toml` (`name = "..."`,
-   troque o placeholder `nomecliente-ia-insights`). Passo a passo completo em
-   `SETUP-IA.md`.
-8. [ ] **4 Secrets do repositório no GitHub** (Settings → Secrets and variables →
-   Actions → New repository secret):
-   - `CLOUDFLARE_API_TOKEN`
-   - `CLOUDFLARE_ACCOUNT_ID`
-   - `ANTHROPIC_API_KEY`
-   - `INSIGHTS_PASSWORD`
-9. [ ] **Disparar o primeiro deploy do Worker** — um commit tocando qualquer
-   arquivo dentro de `ia-worker/` já dispara `.github/workflows/deploy-worker.yml`
-   automaticamente (ou rode manualmente pela aba Actions, se o workflow tiver
-   `workflow_dispatch`).
-10. [ ] **Embutir a URL do Worker no build** — copiar a URL do Worker (exibida na
-    Cloudflare) para `IA_WORKER_URL` em `build/config.py` e rodar/disparar um novo
-    build. Isso faz os insights aparecerem para **qualquer visitante**, em qualquer
-    navegador, sem precisar configurar nada — a persistência é no Worker (KV), não
-    no navegador. Na aba **IA Insights** → **⚙ Configurar**, só é preciso colar a
-    senha (a mesma do secret `INSIGHTS_PASSWORD`) para poder **gerar** novos
-    insights; o campo "Worker URL" ali é opcional (só para apontar a um backend
-    diferente do padrão embutido).
-11. [ ] **Testar** — clicar em **Gerar insights** e confirmar que os cards aparecem
-    (e continuam aparecendo depois de recarregar a página em outro navegador).
+7. [ ] **Routine do Briefing do Gestor** — configure uma Routine do Claude Code (ou
+   equivalente) que rode **23:59 BRT**, leia `build/relatorios_metrics.json` e
+   escreva `build/relatorios.json` seguindo `build/GUIA-RELATORIOS.md` (ver "Aba
+   Relatórios" abaixo). É o que preenche o Briefing do Gestor; o resto da aba
+   (cards, Saúde do funil, Top/Piores anúncios) roda 100% no navegador, sem essa
+   Routine.
+8. [ ] *(OPCIONAL/legado — não é preciso para o cliente ir ao ar)* **Worker da IA
+   Insights** — o dashboard não tem mais uma aba de geração de insights ao vivo
+   (foi substituída pela Routine acima + o card "Saúde do funil", que não usa IA);
+   `ia-worker/` fica no repo só como infraestrutura reaproveitável, caso um cliente
+   específico volte a precisar de geração ao vivo. Se for usar: criar um Worker na
+   Cloudflare, ajustar `ia-worker/wrangler.toml` (`name = "..."`, troque o
+   placeholder `nomecliente-ia-insights`), cadastrar os secrets
+   `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID`/`ANTHROPIC_API_KEY`/
+   `INSIGHTS_PASSWORD` e preencher `IA_WORKER_URL` em `build/config.py`. Passo a
+   passo completo em `SETUP-IA.md`.
 
 ---
 
@@ -127,6 +121,34 @@ ConvCHK (Vendas/Checkouts) · Faturamento · ROAS (Faturamento/Gasto) · Ticket 
   fora. Só conta status pago.
 - Se não houver coluna de Receita, não há Receita/ROAS/Ticket — ajuste o texto desta
   seção se o cliente novo tiver uma regra diferente.
+- **Upsell/downsell pós-compra (OPCIONAL)**: se o funil do cliente tiver, logo após
+  a compra do produto principal, uma oferta de upsell e, se recusada, um downsell
+  mais barato do MESMO produto (as duas aparecem com o texto IDÊNTICO na coluna
+  Produto), preencha `UPSELL_PRODUCT_PREFIX`/`UPSELL_SPLIT_VALUE`/
+  `UPSELL_USL_LABEL`/`UPSELL_DSL_LABEL` em `build/config.py` (comentado em
+  `config.example.py`). O build separa as duas ofertas pelo valor da venda; elas
+  entram no Faturamento/ROAS mas não em Vendas/CAC/ConvCHK/Ticket, e são
+  atribuídas ao Meta Ads herdando a campanha/anúncio da compra do produto
+  principal do MESMO comprador (casando por e-mail), já que upsell/downsell
+  normalmente não carregam UTM própria. Deixe os campos vazios se o funil não
+  tiver esse tipo de oferta (comportamento inalterado).
+- **Indicativo ATIVO/PAUSADO** (bolinha antes do nome nas tabelas de Campanhas/
+  Conjuntos/Anúncios da aba Meta Ads): OPCIONAL — aparece automaticamente se a
+  planilha do cliente tiver colunas de status por linha (aliases `campaign status`/
+  `ad set status`/`ad status` em `build/build.py`). Resolvido no navegador
+  (`latestStatusByDim()` em `build/app.js`), escopado pela mesma seleção de
+  campanha/conjunto/anúncio (drill-down) das tabelas — nunca agregue esse status
+  por nome sozinho no `build.py`: nomes de anúncio/conjunto podem se repetir em
+  campanhas diferentes como anúncios DISTINTOS, e agregar por nome vaza o status
+  de um anúncio ativo numa campanha para um anúncio pausado com o mesmo nome em
+  outra.
+- **HR/BR/ER (retenção de vídeo)**: OPCIONAL — se a planilha do cliente tiver as
+  colunas de video views (3s/50%/95%), essas 3 taxas aparecem automaticamente na
+  tabela de Anúncios (entre CPM e CTR), calculadas em `derive()`
+  (`build/app.js`) sobre Impressões.
+- **Busca por nome** nas tabelas de Campanhas/Conjuntos/Anúncios (campo de texto
+  ao lado do título) e **heatmap na coluna Vendas** (além de Gasto/Faturamento/
+  ROAS) já vêm por padrão no template, sem configuração.
 
 ### Imposto Meta Ads
 Toggle ON aplica o `TAX_FACTOR` (definido em `build/config.py`) sobre os custos do Meta.
@@ -140,21 +162,17 @@ acima). O match com o Meta (campo `meta`, usado pela aba Meta Ads) exige
 herda a campanha/conjunto reais do Meta (para o gasto e a venda caírem na mesma linha
 das tabelas).
 
-## IA Insights
+## IA Insights (legado)
 
-Aba de análise por IA (Claude) do funil e das estruturas ativas — ver `SETUP-IA.md`
-para o passo a passo completo de configuração do backend (Cloudflare Worker +
-deploy automático via GitHub Actions).
-
-**Persistência:** o último resultado gerado fica salvo no **Worker (KV namespace
-`INSIGHTS_KV`)**, não no navegador — por isso qualquer visitante, em qualquer
-navegador, vê os mesmos insights sem precisar gerar de novo. A URL do Worker vem
-embutida no build (`IA_WORKER_URL` em `build/config.py`); a senha (`INSIGHTS_PASSWORD`)
-só é exigida para **gerar** novos insights (POST), não para ler os já gerados
-(GET, público). O workflow `deploy-worker.yml` cria o KV namespace sozinho no
-primeiro deploy; se o `CLOUDFLARE_API_TOKEN` não tiver a permissão "Workers KV
-Storage: Edit", ele publica o Worker sem persistência (volta ao comportamento
-antigo, sem quebrar o deploy) e avisa no log do Actions.
+O dashboard **não tem mais uma aba própria de geração de insights ao vivo**. O que
+existia (botão "Gerar insights" chamando um Worker via POST) foi substituído por:
+o card **"Saúde do funil"** (nota 0-100 calculada no navegador, sem IA — ver "Aba
+Relatórios" abaixo) e o **Briefing do Gestor** (texto pré-gerado 1×/dia por uma
+Routine, sem chamada de API no navegador). O backend (`ia-worker/worker.js`,
+`ia-worker/wrangler.toml`, `IA_WORKER_URL` em `build/config.py`) continua no repo
+como infraestrutura reaproveitável para quem quiser voltar a ter geração ao vivo —
+ver `SETUP-IA.md` para o passo a passo de deploy (Cloudflare Worker + GitHub
+Actions), item 8 (opcional) do checklist acima.
 
 ## Arquitetura / arquivos
 
@@ -170,9 +188,9 @@ build/identidade-visual.css # ⭐ TODAS as cores (temas claro/escuro, paleta de 
 build/estilos.css          # layout/componentes (CSS não-cor)
 build/app.js               # lógica + renderização (gráficos/heatmap leem as cores via CSS vars)
 .github/workflows/deploy.yml         # roda build.py e publica no Pages
-.github/workflows/deploy-worker.yml  # publica o Worker da IA Insights (Cloudflare)
+.github/workflows/deploy-worker.yml  # publica o Worker de IA (legado/opcional — ver "IA Insights (legado)")
 .github/workflows/gerar-relatorios-metrics.yml # 23:50 BRT: busca as planilhas e commita relatorios_metrics.json
-ia-worker/worker.js    # backend da aba IA Insights (ENGINE — não editar por cliente)
+ia-worker/worker.js    # backend de IA legado/opcional (ENGINE — não editar por cliente; não usado pela UI atual)
 ia-worker/wrangler.toml # nome do Worker (preencher por cliente, placeholder nomecliente-ia-insights)
 build/relatorios.json  # briefings do Gestor por período (aba Relatórios) — VERSIONADO
 build/relatorios_metrics.json # números por período (gerado pelo Actions, lido pela Routine) — VERSIONADO
@@ -183,19 +201,29 @@ dist/index.html        # saída gerada (gitignored; o Actions reconstrói)
 GUIA-REPLICACAO.md     # engine explicada + solução dos problemas de publicação
 config.js               # metadados de publicação (GitHub) — copie de config.example.js
 SETUP-CRON.md          # valores do cron-job.org (owner/repo com placeholders)
-SETUP-IA.md            # passo a passo da aba IA Insights
+SETUP-IA.md            # passo a passo do backend de IA legado/opcional (ver "IA Insights (legado)")
 ```
 
-### Aba Relatórios (relatórios automáticos do funil)
-Aba entre **Meta Ads** e **IA Insights**. Reaproveita os filtros de data da topbar
-e os dados já embutidos (`meta[]`/`sales[]`) — tudo calculado no navegador (custo
-zero): cards **Visão Geral Total** (todas as vendas) e **Tráfego** (só Meta Ads),
-tabela diária resumida (Total | Ads), visão por campanha, **Top 5 / Piores 5
-anúncios** (com link do criativo via coluna *Creative Instagram Permalink* →
-`ad_links`, se a planilha do cliente tiver essa coluna). **Código de cor**
-(vermelho/amarelo/verde/ciano) só em **CAC** e **ROAS**, conforme
-`CAC_TARGET`/`ROAS_TARGET` em `build/config.py` (desempenho = ROAS `valor/meta`,
-CAC `meta/valor`).
+### Aba Relatórios / "Insights de IA" (relatórios automáticos do funil)
+Última aba do menu (nome exibido "Insights de IA", id interno `page-rel`).
+Reaproveita os filtros de data da topbar e os dados já embutidos (`meta[]`/
+`sales[]`) — tudo calculado no navegador (custo zero): card **Saúde do funil**
+(nota 0-100 — ver abaixo), visão por campanha, **Top 5 / Piores 5 anúncios**
+(Top 5 exige um mínimo de 3 vendas no período; com link do criativo via coluna
+*Creative Instagram Permalink* → `ad_links`, se a planilha do cliente tiver essa
+coluna), cards **Visão Geral Total** (todas as vendas) e **Tráfego** (só Meta
+Ads), e o **Briefing do Gestor** (texto pré-gerado por IA). **Código de cor**
+(vermelho/amarelo/verde/ciano) em **CAC** e **ROAS** (visão por campanha/Top-
+Piores), conforme `CAC_TARGET`/`ROAS_TARGET` em `build/config.py` (desempenho =
+ROAS `valor/meta`, CAC `meta/valor`).
+
+**Saúde do funil** — nota 0-100 calculada no navegador (sem IA), ancorada numa
+meta de **CAC** editável direto no card (persistida em `localStorage`, ou
+`CAC_TARGET` de `build/config.py` como valor inicial) e numa meta de **ROAS**
+(`ROAS_TARGET`); os demais componentes (CTR, CR, VisCHK, ConvCHK) usam como piso
+85% da taxa histórica da própria conta (todo o período, sem filtro de data).
+ROAS pesa mais na nota (35%) por ser o único componente que garante lucro, não
+só desempenho operacional.
 
 O **Briefing do Gestor** (texto interpretativo por período) é **pré-gerado por IA**
 e lido de `build/relatorios.json` — **sem chamada de API no navegador nem créditos
@@ -229,15 +257,14 @@ Teste local:
    REST de Actions/Pages e nem `api.cloudflare.com` — mas o runner do Actions alcança
    tudo. Teste dados com CSV local; deploys da Cloudflare passam pelo GitHub Actions.
 5. **Token exposto no chat:** revogar e gerar um novo (fine‑grained, só Actions: r/w no repo).
-6. **"Senha incorreta" na aba IA Insights após um deploy:** normalmente indica que os
-   secrets `ANTHROPIC_API_KEY`/`INSIGHTS_PASSWORD` não estão cadastrados como Secrets
-   do repositório no GitHub — o workflow `deploy-worker.yml` os reaplica no Worker a
-   cada deploy; sem eles cadastrados, o Worker fica sem senha válida.
-7. **Insights "somem":** se estiverem salvos só no navegador (versões antigas do
-   template), limpar dados do navegador apaga tudo. A partir desta versão a
-   persistência é no Worker (KV) — ver seção "IA Insights" acima; confirme que
-   `IA_WORKER_URL` está preenchido em `build/config.py` e que o log do deploy do Worker
-   não mostrou o aviso de KV sem permissão.
+6. **"Senha incorreta" no backend de IA legado (se estiver em uso):** normalmente
+   indica que os secrets `ANTHROPIC_API_KEY`/`INSIGHTS_PASSWORD` não estão
+   cadastrados como Secrets do repositório no GitHub — o workflow `deploy-worker.yml`
+   os reaplica no Worker a cada deploy; sem eles cadastrados, o Worker fica sem
+   senha válida. Só se aplica a quem reativou o Worker (ver "IA Insights (legado)").
+7. **Briefing do Gestor não aparece:** confirme que `build/relatorios.json` existe e
+   que a Routine (item 7 do checklist) está rodando 1×/dia; sem esse arquivo, a aba
+   mostra tudo (cards, Saúde do funil, tabelas) menos o briefing.
 8. **Venda não aparece na aba Meta Ads (ou aparece na campanha errada):** confirme
    qual coluna UTM da planilha do cliente carrega o identificador real do anúncio do
    Meta (`Ad Name`) — nem sempre é `UTM Content`; `UTM Term` costuma carregar o

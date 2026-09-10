@@ -4,6 +4,14 @@ const META = DATA.meta, SALES = DATA.sales, B = DATA.build;
 const TAX = B.tax_factor || 1;
 const MAIN_PRODUCT = B.main_product || 'Produto principal';
 const MAIN_PREFIX = B.main_product_prefix || '';
+/* status ATIVO/PAUSADO por campanha/conjunto/anúncio — só p/ o indicativo
+   visual nas tabelas de otimização (Meta Ads); não afeta cálculo/filtro
+   nenhum. Resolvido em latestStatusByDim() (mais abaixo): usa SEMPRE a linha
+   mais recente disponível em cada meta[] (ignora o filtro de DATA da
+   topbar de propósito) e é escopado pela mesma seleção de campanha/conjunto
+   (drill-down) das tabelas — nunca mistura linhas de campanhas diferentes,
+   mesmo quando duas campanhas reaproveitam o mesmo nome de anúncio/conjunto
+   (ex. "AD03" existindo em campanhas distintas como anúncios DISTINTOS). */
 
 /* ---------------- format ---------------- */
 const nf0=new Intl.NumberFormat('pt-BR',{maximumFractionDigits:0});
@@ -34,7 +42,7 @@ const STATE = {
   selDays:new Set(),
   mSelC:new Set(), mSelA:new Set(), mSelAd:new Set(),
   sort:{}, colw: JSON.parse(localStorage.getItem('dm_colw')||'{}'),
-  iaWin: localStorage.getItem('ia_win') || '14d',
+  search:{tCamp:'', tAdset:'', tAd:''},
 };
 const taxf = ()=> STATE.tax ? TAX : 1;
 
@@ -53,12 +61,15 @@ const salesActive = ()=> SALES.filter(s=>dateActive(s.d));
    vendasM = compras do produto principal atribuídas ao Meta Ads (base das conversões)
    fat     = faturamento (todos os produtos do escopo)
    Obs.: na aba Meta o conjunto de vendas já é filtrado a meta==1, então vendas==vendasM. */
-function newBucket(){return {sp:0,im:0,cl:0,pv:0,ck:0,vendas:0,vendasM:0,fat:0};}
+function newBucket(){return {sp:0,im:0,cl:0,pv:0,ck:0,vv3:0,vv50:0,vv95:0,vendas:0,vendasM:0,fat:0};}
 function addSales(a,r){ a.vendas+=r.main; a.vendasM+=(r.main&&r.meta)?1:0; a.fat+=r.val; }
 function derive(a){
   const g=a.sp*taxf();
   return {gasto:g, impr:a.im, cliques:a.cl, pv:a.pv, ck:a.ck, vendas:a.vendas, fat:a.fat,
     cpm:a.im?g/a.im*1000:null, ctr:a.im?a.cl/a.im:null, cpc:a.cl?g/a.cl:null,
+    /* HR/BR/ER = taxas de retenção do vídeo (3s / 50% / 95%) sobre Impressões —
+       exibidas só na tabela de Anúncios (ver AD_HCOLS abaixo). */
+    hr:a.im?a.vv3/a.im:null, br:a.im?a.vv50/a.im:null, er:a.im?a.vv95/a.im:null,
     cpv:a.pv?g/a.pv:null, cr:a.cl?a.pv/a.cl:null,               /* CR = Page Views / Cliques */
     cpic:a.ck?g/a.ck:null, vischk:a.pv?a.ck/a.pv:null,
     convlp:a.pv?a.vendasM/a.pv:null,                            /* Vendas(Meta) / Page Views */
@@ -67,13 +78,13 @@ function derive(a){
 }
 function buildAgg(fS,fM,dim){
   const m={}; const get=k=>m[k]||(m[k]=newBucket());
-  fM.forEach(r=>{const a=get(r[dim]); a.sp+=r.sp; a.im+=r.im; a.cl+=r.cl; a.pv+=r.pv; a.ck+=r.ck;});
+  fM.forEach(r=>{const a=get(r[dim]); a.sp+=r.sp; a.im+=r.im; a.cl+=r.cl; a.pv+=r.pv; a.ck+=r.ck; a.vv3+=r.vv3; a.vv50+=r.vv50; a.vv95+=r.vv95;});
   fS.forEach(r=>{const a=get(r[dim]); addSales(a,r);});
   return m;
 }
 function totals(fS,fM){
   const a=newBucket();
-  fM.forEach(r=>{a.sp+=r.sp;a.im+=r.im;a.cl+=r.cl;a.pv+=r.pv;a.ck+=r.ck;});
+  fM.forEach(r=>{a.sp+=r.sp;a.im+=r.im;a.cl+=r.cl;a.pv+=r.pv;a.ck+=r.ck;a.vv3+=r.vv3;a.vv50+=r.vv50;a.vv95+=r.vv95;});
   fS.forEach(r=>addSales(a,r));
   return a;
 }
@@ -111,11 +122,12 @@ function renderTable(cfg){
   }).join('')+'</tr></thead>';
   let tbody='<tbody>'+rows.map(r=>{
     const sel = cfg.selectable && cfg.selSet && cfg.selSet.has(r.k);
-    const tds=cfg.cols.map(c=>{
+    const tds=cfg.cols.map((c,ci)=>{
       const v=r.cells[c.key]; let bg='';
       if(c.heat && ext[c.key]) bg=`background:${heat(v,ext[c.key][0],ext[c.key][1],c.heat)}`;
       const cls=(c.type==='dim'?'dim':'');
-      return `<td class="${cls}" style="${bg}">${fmt(c.type,v)}</td>`;
+      const dot = (ci===0 && cfg.statusMap) ? statusDot(cfg.statusMap[r.k]) : '';
+      return `<td class="${cls}" style="${bg}">${dot}${fmt(c.type,v)}</td>`;
     }).join('');
     return `<tr class="${sel?'sel':''}" data-k="${encodeURIComponent(r.k)}">${tds}</tr>`;
   }).join('')+'</tbody>';
@@ -152,9 +164,15 @@ function renderTable(cfg){
     });
   }
 }
+/* status ATIVO/PAUSADO ao lado do nome (campanha/conjunto/anúncio) — só o
+   indicativo visual; não altera dado, ordenação ou filtro nenhum. */
+function statusDot(active){
+  if(active==null) return '';
+  return active ? '<span class="status-dot on" title="Ativo"></span>' : '<span class="status-dot off" title="Pausado"></span>';
+}
 /* Heatmap por coluna: cor FIXA por métrica (definida em identidade-visual.css),
    só a OPACIDADE varia com o valor (maior valor = mais vibrante). */
-const HEAT_HUE={gasto:'--heat-gasto', fat:'--heat-fat', roas:'--heat-roas'};
+const HEAT_HUE={gasto:'--heat-gasto', fat:'--heat-fat', roas:'--heat-roas', vendas:'--heat-vendas'};
 function heat(v,lo,hi,kind){
   if(v==null||!isFinite(v)||hi===lo||!HEAT_HUE[kind]) return 'transparent';
   const t=Math.max(0,Math.min(1,(v-lo)/(hi-lo)));
@@ -263,16 +281,21 @@ const METRIC_COLS=[
   {key:'cr',label:'CR',type:'pct'},
   {key:'vischk',label:'VisCHK',type:'pct'},
   {key:'convchk',label:'ConvCHK',type:'pct'},
-  {key:'vendas',label:'Vendas',type:'int'},
+  {key:'vendas',label:'Vendas',type:'int',heat:'vendas'}, /* heatmap azul */
   {key:'cac',label:'CAC',type:'brl'},
   {key:'fat',label:'Faturamento',type:'brl',heat:'fat'},  /* heatmap verde */
   {key:'ticket',label:'Ticket',type:'brl'},
   {key:'roas',label:'ROAS',type:'roas',heat:'roas'},      /* heatmap amarelo */
 ];
 const DAILY_COLS=[{key:'date',label:'Data',type:'date'},{key:'wd',label:'Dia',type:'dim',w:64}].concat(METRIC_COLS);
-const HCOLS=[{key:'dim',label:'',type:'dim',big:true}].concat(METRIC_COLS.map(c=>{const o={...c}; delete o.heat; return o;}));
+const HCOLS=[{key:'dim',label:'',type:'dim',big:true}].concat(METRIC_COLS);
+/* Só a tabela de Anúncios ganha HR/BR/ER (retenção de vídeo), entre CPM e CTR —
+   Campanhas/Conjuntos/Diária seguem só com METRIC_COLS. */
+const AD_HCOLS=(()=>{ const cols=HCOLS.slice(); const i=cols.findIndex(c=>c.key==='ctr');
+  cols.splice(i,0,{key:'hr',label:'HR',type:'pct'},{key:'br',label:'BR',type:'pct'},{key:'er',label:'ER',type:'pct'});
+  return cols; })();
 function metricCells(x,d){
-  return {gasto:d.gasto, cpm:d.cpm, ctr:d.ctr, cr:d.cr, vischk:d.vischk, convchk:d.convchk,
+  return {gasto:d.gasto, cpm:d.cpm, hr:d.hr, br:d.br, er:d.er, ctr:d.ctr, cr:d.cr, vischk:d.vischk, convchk:d.convchk,
     vendas:x.vendas, cac:d.cac, fat:x.fat, ticket:d.ticket, roas:d.roas};
 }
 function dailyCells(x,d,isTotal){
@@ -370,6 +393,37 @@ function metaScope(ex){ let fM=metaActive(), fS=salesActive().filter(s=>s.meta);
   if(ex!=='A'&&STATE.mSelA.size){ fM=fM.filter(r=>STATE.mSelA.has(r.adset)); fS=fS.filter(r=>STATE.mSelA.has(r.adset)); }
   if(ex!=='D'&&STATE.mSelAd.size){ fM=fM.filter(r=>STATE.mSelAd.has(r.ad)); fS=fS.filter(r=>STATE.mSelAd.has(r.ad)); }
   return {fM,fS}; }
+/* Igual a metaScope() acima, mas de propósito SEM o filtro de DATA da topbar
+   (usa META inteiro) — o indicativo de ativo/pausado tem que refletir a linha
+   mais recente disponível na planilha, não só as do período selecionado no
+   filtro de data (esse continua valendo pra tudo o mais: gasto, vendas etc.).
+   Mantém o mesmo escopo de campanha/conjunto/anúncio (drill-down) das tabelas. */
+function metaScopeAllDates(ex){
+  let fM=META;
+  if(ex!=='C'&&STATE.mSelC.size){ fM=fM.filter(r=>STATE.mSelC.has(r.camp)); }
+  if(ex!=='A'&&STATE.mSelA.size){ fM=fM.filter(r=>STATE.mSelA.has(r.adset)); }
+  if(ex!=='D'&&STATE.mSelAd.size){ fM=fM.filter(r=>STATE.mSelAd.has(r.ad)); }
+  return fM;
+}
+/* {nome: ativo} pra uma dimensão (camp/adset/ad), a partir da linha de MAIOR
+   data disponível (dentro do escopo já filtrado por campanha/conjunto/anúncio
+   selecionados — nunca mistura linhas de campanhas diferentes reaproveitando
+   o mesmo nome). statusField é o campo cru da linha ('cs'/'as'/'ds' — ver
+   build/build.py); linhas com esse campo null (sem status naquela linha) são
+   ignoradas. */
+function latestStatusByDim(fM, dim, statusField){
+  const latest={};
+  fM.forEach(r=>{
+    const st=r[statusField];
+    if(st==null) return;
+    const k=r[dim];
+    const prev=latest[k];
+    if(!prev || (r.d||'')>=(prev.d||'')) latest[k]={d:r.d, v:st};
+  });
+  const out={};
+  Object.keys(latest).forEach(k=>out[k]=latest[k].v);
+  return out;
+}
 /* Cada dimensão (campanha/conjunto/anúncio) tem seu próprio conjunto de seleção,
    combinados em AND por metaScope. Um clique aqui só mexe no conjunto da própria
    dimensão — nunca limpa a seleção das outras tabelas (ver botões ✕ Filtro,
@@ -409,16 +463,19 @@ function renderMeta(){
     onSelect:(k,e)=>{ toggleSet(STATE.selDays,k,e&&(e.ctrlKey||e.metaKey)); syncDateInputs(); renderAll(); },
   });
 
-  function hierRows(map){ return Object.entries(map).map(([k,a])=>{const dv=derive(a);
-    return {k, cells:Object.assign({dim:k}, metricCells(a,dv))};}); }
+  function hierRows(map,searchKey){ let rows=Object.entries(map).map(([k,a])=>{const dv=derive(a);
+      return {k, cells:Object.assign({dim:k}, metricCells(a,dv))};});
+    const q=norm(STATE.search[searchKey]);
+    if(q) rows=rows.filter(r=>norm(r.cells.dim).includes(q));
+    return rows; }
   function totRowOf(tt){const dv=derive(tt);return Object.assign({dim:null}, metricCells(tt,dv));}
   const Sc=metaScope('C'), Sa=metaScope('A'), Sd=metaScope('D');
-  renderTable({id:'tCamp', cols:HCOLS.map((c,i)=>i===0?{...c,label:'Campanha'}:c), rows:hierRows(buildAgg(Sc.fS,Sc.fM,'camp')), total:totRowOf(totals(Sc.fS,Sc.fM)),
-    selectable:true, selSet:STATE.mSelC, onSelect:(k,e)=>selDim('C',k,e&&(e.ctrlKey||e.metaKey))});
-  renderTable({id:'tAdset', cols:HCOLS.map((c,i)=>i===0?{...c,label:'Conjunto',big:true}:c), rows:hierRows(buildAgg(Sa.fS,Sa.fM,'adset')), total:totRowOf(totals(Sa.fS,Sa.fM)),
-    selectable:true, selSet:STATE.mSelA, onSelect:(k,e)=>selDim('A',k,e&&(e.ctrlKey||e.metaKey))});
-  renderTable({id:'tAd', cols:HCOLS.map((c,i)=>i===0?{...c,label:'Anúncio'}:c), rows:hierRows(buildAgg(Sd.fS,Sd.fM,'ad')), total:totRowOf(totals(Sd.fS,Sd.fM)),
-    selectable:true, selSet:STATE.mSelAd, onSelect:(k,e)=>selDim('D',k,e&&(e.ctrlKey||e.metaKey))});
+  renderTable({id:'tCamp', cols:HCOLS.map((c,i)=>i===0?{...c,label:'Campanha'}:c), rows:hierRows(buildAgg(Sc.fS,Sc.fM,'camp'),'tCamp'), total:totRowOf(totals(Sc.fS,Sc.fM)),
+    statusMap:latestStatusByDim(metaScopeAllDates('C'),'camp','cs'), selectable:true, selSet:STATE.mSelC, onSelect:(k,e)=>selDim('C',k,e&&(e.ctrlKey||e.metaKey))});
+  renderTable({id:'tAdset', cols:HCOLS.map((c,i)=>i===0?{...c,label:'Conjunto',big:true}:c), rows:hierRows(buildAgg(Sa.fS,Sa.fM,'adset'),'tAdset'), total:totRowOf(totals(Sa.fS,Sa.fM)),
+    statusMap:latestStatusByDim(metaScopeAllDates('A'),'adset','as'), selectable:true, selSet:STATE.mSelA, onSelect:(k,e)=>selDim('A',k,e&&(e.ctrlKey||e.metaKey))});
+  renderTable({id:'tAd', cols:AD_HCOLS.map((c,i)=>i===0?{...c,label:'Anúncio'}:c), rows:hierRows(buildAgg(Sd.fS,Sd.fM,'ad'),'tAd'), total:totRowOf(totals(Sd.fS,Sd.fM)),
+    statusMap:latestStatusByDim(metaScopeAllDates('D'),'ad','ds'), selectable:true, selSet:STATE.mSelAd, onSelect:(k,e)=>selDim('D',k,e&&(e.ctrlKey||e.metaKey))});
 
   /* cada gráfico segue a dimensão da tabela acima (mesmos dados escopados);
      quando a própria dimensão tem seleção (clique na tabela), o gráfico mostra
@@ -444,6 +501,90 @@ const CAC_TARGET=B.cac_target, ROAS_TARGET=B.roas_target;
 const REL_BAND_LO=(B.report_band_low!=null?B.report_band_low:0.7);
 const REL_BAND_HI=(B.report_band_high!=null?B.report_band_high:1.3);
 const AD_LINKS=DATA.ad_links||{};
+
+/* ---- saúde do funil: histórico da conta (todo o período, sem filtro) ----
+   Funil VSL: CAC é a meta editável (âncora); CTR/CR/VisCHK/ConvCHK são pisos
+   de conversão de cada etapa, estipulados a partir do histórico da conta. */
+const HIST=derive(totals(SALES,META));
+const HEALTH_GOAL_KEY='dm_health_cac_goal';
+STATE.cacGoal=(()=>{ const v=parseFloat(localStorage.getItem(HEALTH_GOAL_KEY));
+  if(isFinite(v)&&v>0) return v;
+  return (CAC_TARGET&&CAC_TARGET>0)?CAC_TARGET:(HIST.cac||null); })();
+/* meta de ROAS: usa ROAS_TARGET (build/config.py) quando configurado; senão
+   ancora no ROAS histórico da conta — sem meta o funil não é "saudável", só
+   "igual ao de sempre", mas garante que a nota sempre reflita lucratividade. */
+const HEALTH_ROAS_TARGET=(ROAS_TARGET&&ROAS_TARGET>0)?ROAS_TARGET:(HIST.roas||null);
+const HEALTH_TOL=0.85; /* piso = 85% da taxa histórica da conta */
+const HEALTH_CTR_MIN=HIST.ctr!=null?HIST.ctr*HEALTH_TOL:null;
+const HEALTH_CR_MIN=HIST.cr!=null?HIST.cr*HEALTH_TOL:null;
+const HEALTH_VISCHK_MIN=HIST.vischk!=null?HIST.vischk*HEALTH_TOL:null;
+const HEALTH_CONVCHK_MIN=HIST.convchk!=null?HIST.convchk*HEALTH_TOL:null;
+function healthPerf(actual,target,higherIsBetter){
+  if(actual==null||!isFinite(actual)||!target||!isFinite(target)||target<=0) return null;
+  return higherIsBetter ? actual/target : target/actual;
+}
+function healthBar(label,valTxt,perf,note){
+  const pct=perf==null?0:Math.max(0,Math.min(100,Math.round(perf*100)));
+  const cls=perf==null?'':(perf>=1?'hb-ok':(perf>=0.75?'hb-warn':'hb-bad'));
+  return `<div class="health-bar-item"><div class="health-bar-head"><span>${label}${note?` <span class="health-bar-note">${note}</span>`:''}</span><b>${valTxt}</b></div>
+    <div class="health-bar-track"><div class="health-bar-fill ${cls}" style="width:${pct}%"></div></div></div>`;
+}
+function renderHealthCard(d){
+  const goal=STATE.cacGoal;
+  const minCtr=HEALTH_CTR_MIN, minCr=HEALTH_CR_MIN, minVischk=HEALTH_VISCHK_MIN, minConvchk=HEALTH_CONVCHK_MIN;
+
+  const pRoas=healthPerf(d.roas,HEALTH_ROAS_TARGET,true);
+  const pCac=healthPerf(d.cac,goal,false);
+  const pCtr=healthPerf(d.ctr,minCtr,true);
+  const pCr=healthPerf(d.cr,minCr,true);
+  const pVischk=healthPerf(d.vischk,minVischk,true);
+  const pConvchk=healthPerf(d.convchk,minConvchk,true);
+
+  /* ROAS tem o maior peso: funil saudável precisa dar lucro, não só bater metas
+     operacionais de custo/conversão — por isso pesa mais que o próprio CAC. */
+  const comps=[[pRoas,0.35],[pCac,0.25],[pCtr,0.1],[pCr,0.1],[pVischk,0.1],[pConvchk,0.1]].filter(c=>c[0]!=null);
+  const wSum=comps.reduce((s,c)=>s+c[1],0);
+  const score=wSum? Math.max(0,Math.min(100,Math.round(comps.reduce((s,c)=>s+Math.min(c[0],1.3)*c[1],0)/wSum*100))) : null;
+
+  const band = score==null?{cls:'',lbl:'Sem dados'}:
+    score>=100?{cls:'rc-cyan',lbl:'Excelente'}:
+    score>=70?{cls:'rc-green',lbl:'Bom'}:
+    score>=40?{cls:'rc-yellow',lbl:'Regular'}:
+    {cls:'rc-red',lbl:'Crítico'};
+  const ringColor = band.cls==='rc-cyan'?'var(--aqua)':band.cls==='rc-green'?'var(--good)':band.cls==='rc-yellow'?'var(--yellow)':band.cls==='rc-red'?'var(--red)':'var(--border)';
+
+  document.getElementById('healthScore').textContent = score==null?'--':score;
+  document.getElementById('healthRing').style.background = `conic-gradient(${ringColor} ${(score||0)*3.6}deg, var(--border) 0deg)`;
+  const badgeEl=document.getElementById('healthBadge');
+  badgeEl.textContent = score==null?'--':`${band.lbl} · ${score}/100`;
+  badgeEl.className = 'health-badge '+band.cls;
+  document.getElementById('healthDesc').textContent = goal ? 'ROAS (lucratividade) tem o maior peso na nota' : 'defina a meta de CAC abaixo p/ calcular a nota';
+
+  const goalInput=document.getElementById('healthGoalInput');
+  if(document.activeElement!==goalInput) goalInput.value = goal!=null? goal.toFixed(2) : '';
+
+  document.getElementById('healthBars').innerHTML = [
+    healthBar('ROAS · meta '+(HEALTH_ROAS_TARGET?roasf(HEALTH_ROAS_TARGET):'—'), roasf(d.roas), pRoas),
+    healthBar('CAC · meta '+(goal!=null?brl(goal):'—'), brl(d.cac), pCac),
+    healthBar('CTR · mín '+(minCtr!=null?pct(minCtr):'—'), pct(d.ctr), pCtr),
+    healthBar('CR · mín '+(minCr!=null?pct(minCr):'—'), pct(d.cr), pCr),
+    healthBar('VisCHK · mín '+(minVischk!=null?pct(minVischk):'—'), pct(d.vischk), pVischk),
+    healthBar('ConvCHK · mín '+(minConvchk!=null?pct(minConvchk):'—'), pct(d.convchk), pConvchk),
+  ].join('');
+}
+if(!window.__healthGoalWired){
+  window.__healthGoalWired=true;
+  document.addEventListener('input',e=>{
+    if(e.target&&e.target.id==='healthGoalInput'){
+      const v=parseFloat(e.target.value);
+      STATE.cacGoal=(isFinite(v)&&v>0)?v:null;
+      if(STATE.cacGoal!=null) localStorage.setItem(HEALTH_GOAL_KEY,String(STATE.cacGoal));
+      else localStorage.removeItem(HEALTH_GOAL_KEY);
+      if(STATE.page==='rel'){ const fM=metaActive(), fSall=salesActive();
+        renderHealthCard(derive(totals(fSall,fM))); }
+    }
+  });
+}
 /* desempenho vs meta: CAC menor=melhor (meta/valor); ROAS maior=melhor (valor/meta) */
 function relPerf(v,kind){
   if(v==null||!isFinite(v)) return null;
@@ -504,19 +645,8 @@ function renderRelatorios(){
   relCards('relCardsTotal',tTot);
   relCards('relCardsAds',tAds);
 
-  /* tabela diária resumida (Total | Ads) */
-  const ddTot=daily(fSall,fM), ddAds={}; daily(fSads,fM).forEach(x=>ddAds[x.d]=x);
-  const dcols=[{label:'Data'},{label:'Dia',cls:'dim'},{label:'Gasto'},{label:'Vendas Totais'},{label:'CAC Total'},{label:'ROAS Total'},
-    {label:'Vendas Ads',cls:'sep-col'},{label:'CAC Ads'},{label:'ROAS Ads'}];
-  const drows=ddTot.slice().reverse().map(x=>{ const dv=derive(x), a=ddAds[x.d], da=a?derive(a):null;
-    const cacA=da?da.cac:null, roasA=da?da.roas:null;
-    return [{v:brdate(x.d),cls:'dim'},{v:weekday(x.d),cls:'dim'},{v:brl(dv.gasto)},{v:intf(x.vendas)},
-      {v:brl(dv.cac),cls:relColor(dv.cac,'cac')},{v:roasf(dv.roas),cls:relColor(dv.roas,'roas')},
-      {v:intf(a?a.vendas:0),cls:'sep-col'},{v:brl(cacA),cls:relColor(cacA,'cac')},{v:roasf(roasA),cls:relColor(roasA,'roas')}]; });
-  const dfoot=[{v:'Total',cls:'dim'},{v:'',cls:'dim'},{v:brl(dvT.gasto)},{v:intf(tTot.vendas)},
-    {v:brl(dvT.cac),cls:relColor(dvT.cac,'cac')},{v:roasf(dvT.roas),cls:relColor(dvT.roas,'roas')},
-    {v:intf(tAds.vendas),cls:'sep-col'},{v:brl(dvA.cac),cls:relColor(dvA.cac,'cac')},{v:roasf(dvA.roas),cls:relColor(dvA.roas,'roas')}];
-  relRenderTable('relDaily',dcols,drows,dfoot);
+  /* saúde do funil (CPIC/CPC/CPV/VisCHK vs. meta + histórico da conta) */
+  renderHealthCard(dvT);
 
   /* visão por campanha (só Meta Ads) */
   const aggC=buildAgg(fSads,fM,'camp');
@@ -536,7 +666,8 @@ function renderRelatorios(){
     return {name,gasto:d.gasto,vendas:ag.vendas,cac:d.cac,roas:d.roas}; });
   ads.sort((a,b)=>{ const ra=a.roas==null?-1:a.roas, rb=b.roas==null?-1:b.roas; if(rb!==ra) return rb-ra;
     const ca=a.cac==null?Infinity:a.cac, cb=b.cac==null?Infinity:b.cac; return ca-cb; });
-  const top=ads.slice(0,5), topSet=new Set(top.map(a=>a.name));
+  const TOP_MIN_VENDAS=3;
+  const top=ads.filter(a=>a.vendas>=TOP_MIN_VENDAS).slice(0,5), topSet=new Set(top.map(a=>a.name));
   const worst=ads.filter(a=>!topSet.has(a.name)).slice(-5).reverse();
   const adCols=[{label:'Anúncio',cls:'dim'},{label:'Gasto'},{label:'Vendas'},{label:'CAC'},{label:'ROAS'},{label:'Link',cls:'dim'}];
   const adRows=list=>list.map(a=>[{v:esc(a.name),cls:'dim'},{v:brl(a.gasto)},{v:intf(a.vendas)},
@@ -548,152 +679,7 @@ function renderRelatorios(){
   renderRelBrief();
 }
 
-/* ---------------- PAGE 3: IA Insights ---------------- */
-const r2=v=>(v==null||!isFinite(v))?null:Math.round(v*100)/100;
-const r4=v=>(v==null||!isFinite(v))?null:Math.round(v*10000)/10000;
 const esc=s=>String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-function iaMetricRow(x,d){
-  return {gasto:r2(d.gasto),impressoes:x.im,cpm:r2(d.cpm),cliques:x.cl,cpc:r2(d.cpc),ctr:r4(d.ctr),
-    page_views:x.pv,cpv:r2(d.cpv),cr:r4(d.cr),checkouts:x.ck,cpic:r2(d.cpic),vischk:r4(d.vischk),
-    convlp:r4(d.convlp),vendas:x.vendas,cac:r2(d.cac),convchk:r4(d.convchk),
-    faturamento:r2(x.fat),roas:r2(d.roas),ticket:r2(d.ticket)};
-}
-/* janela própria da IA — independente do filtro de período das outras abas */
-const IA_WINDOWS=[['3d',3,'3 dias'],['7d',7,'7 dias'],['14d',14,'14 dias'],['30d',30,'30 dias']];
-function iaWinDays(){ const w=IA_WINDOWS.find(x=>x[0]===STATE.iaWin); return w?w[1]:14; }
-function iaRenderWin(){
-  document.getElementById('iaWin').innerHTML=IA_WINDOWS.map(w=>
-    `<button class="chip ${STATE.iaWin===w[0]?'active':''}" data-w="${w[0]}">${w[2]}</button>`).join('');
-  document.querySelectorAll('#iaWin .chip').forEach(c=>c.addEventListener('click',()=>{
-    STATE.iaWin=c.dataset.w; localStorage.setItem('ia_win',STATE.iaWin); iaRenderWin();
-  }));
-}
-function iaSumBuckets(arr){ const a=newBucket(); arr.forEach(x=>{a.sp+=x.sp;a.im+=x.im;a.cl+=x.cl;a.pv+=x.pv;a.ck+=x.ck;a.vendas+=x.vendas;a.vendasM+=x.vendasM;a.fat+=x.fat;}); return a; }
-function iaPctDelta(a,b){ return (a==null||b==null||!isFinite(a)||!isFinite(b)||b===0)?null:+(((a-b)/b)*100).toFixed(1); }
-function iaCmp(dR,dP,k){ return {recente:r2(dR[k]), anterior:r2(dP[k]), variacao_pct:iaPctDelta(dR[k],dP[k])}; }
-function iaBuildData(){
-  const winDays=iaWinDays(), from=addDays(TODAY,-(winDays-1)), to=TODAY;
-  const inWin=d=>d && d>=from && d<=to;
-  const fM=META.filter(m=>inWin(m.d)), fSall=SALES.filter(s=>inWin(s.d)), fSmeta=fSall.filter(s=>s.meta);
-  const t=totals(fSall,fM), tm=totals(fSmeta,fM);
-  const byProd={}; fSmeta.forEach(s=>{byProd[s.prod]=(byProd[s.prod]||0)+1;});
-
-  /* --- séries diárias e janelas de tendência (escopo Meta) --- */
-  const dd=daily(fSmeta,fM);                              // buckets diários (asc)
-  const serie=dd.slice(-90).map(x=>{const dv=derive(x); return {d:x.d, gasto:r2(dv.gasto), cpm:r2(dv.cpm),
-    ctr:r4(dv.ctr), cr:r4(dv.cr), vischk:r4(dv.vischk), convchk:r4(dv.convchk),
-    vendas:x.vendas, cac:r2(dv.cac), fat:r2(x.fat), roas:r2(dv.roas)};});
-  const days=dd.map(x=>x.d), n=days.length, half=Math.max(1,Math.floor(n/2));
-  let comparativo=null, recentSet=null, prevSet=null;
-  if(n>=2){
-    recentSet=new Set(days.slice(n-half));
-    prevSet=new Set(days.slice(Math.max(0,n-2*half), n-half));
-    const R=iaSumBuckets(dd.filter(x=>recentSet.has(x.d))), P=iaSumBuckets(dd.filter(x=>prevSet.has(x.d)));
-    const dR=derive(R), dP=derive(P);
-    comparativo={
-      dias_por_janela:half,
-      janela_recente:{de:days[n-half], ate:days[n-1]},
-      janela_anterior:prevSet.size?{de:days[Math.max(0,n-2*half)], ate:days[n-half-1]}:null,
-      cpm:iaCmp(dR,dP,'cpm'), ctr:iaCmp(dR,dP,'ctr'), cr:iaCmp(dR,dP,'cr'),
-      vischk:iaCmp(dR,dP,'vischk'), convchk:iaCmp(dR,dP,'convchk'),
-      cac:iaCmp(dR,dP,'cac'), roas:iaCmp(dR,dP,'roas'), gasto:iaCmp(dR,dP,'gasto'),
-      vendas:{recente:R.vendas, anterior:P.vendas, variacao_pct:iaPctDelta(R.vendas,P.vendas)},
-    };
-  }
-  /* top estruturas + tendência recente vs anterior */
-  function topTrend(dim,lim){
-    const map=buildAgg(fSmeta,fM,dim);
-    const aggR = recentSet ? buildAgg(fSmeta.filter(r=>recentSet.has(r.d)), fM.filter(r=>recentSet.has(r.d)), dim) : {};
-    const aggP = prevSet   ? buildAgg(fSmeta.filter(r=>prevSet.has(r.d)),   fM.filter(r=>prevSet.has(r.d)),   dim) : {};
-    return Object.entries(map).sort((a,b)=>b[1].sp-a[1].sp).slice(0,lim).map(([nome,a])=>{
-      const row=Object.assign({nome}, iaMetricRow(a,derive(a)));
-      if(comparativo){
-        const dvR=aggR[nome]?derive(aggR[nome]):null, dvP=aggP[nome]?derive(aggP[nome]):null;
-        row.tendencia={
-          cac_recente:dvR?r2(dvR.cac):null, cac_anterior:dvP?r2(dvP.cac):null,
-          roas_recente:dvR?r2(dvR.roas):null, roas_anterior:dvP?r2(dvP.roas):null,
-          gasto_recente:dvR?r2(dvR.gasto):null, gasto_anterior:dvP?r2(dvP.gasto):null };
-      }
-      return row;
-    });
-  }
-
-  return {
-    periodo:{de:from,ate:to,janela_ia:STATE.iaWin,dias_no_periodo:n},
-    imposto_meta_aplicado: STATE.tax,
-    obs:"Taxas em fração 0-1. cr=PageViews/Cliques; vischk=Checkouts/PageViews; convlp=Vendas/PageViews; convchk=Vendas/Checkouts. total_todas_vendas inclui vendas orgânicas; conversões e estruturas consideram apenas Meta Ads. Produto principal = "+MAIN_PRODUCT+". comparativo_periodo compara a janela recente vs a anterior (mesmo nº de dias) — use para detectar SATURAÇÃO/fadiga (ex.: CPM subindo + CTR/ROAS caindo). serie_diaria = evolução dia a dia. variacao_pct = variação % recente vs anterior. Cada estrutura traz 'tendencia' (recente vs anterior).",
-    total_todas_vendas: iaMetricRow(t,derive(t)),
-    total_meta_ads: iaMetricRow(tm,derive(tm)),
-    comparativo_periodo: comparativo,
-    serie_diaria: serie,
-    campanhas: topTrend('camp',10),
-    conjuntos: topTrend('adset',10),
-    anuncios: topTrend('ad',15),
-    vendas_por_produto: Object.entries(byProd).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([produto,vendas])=>({produto,vendas})),
-  };
-}
-function iaBackendUrl(){ return iaNormUrl(localStorage.getItem('ia_backend')||B.ia_worker_url||''); }
-function iaStatusText(){
-  const b=iaBackendUrl(), p=localStorage.getItem('ia_pass');
-  document.getElementById('iaStatus').textContent = b ? '' : 'backend não configurado — clique em Configurar';
-  document.getElementById('iaGen').disabled = !(b&&p);
-}
-function iaShow(html){ document.getElementById('iaCards').innerHTML=html; }
-function iaFmtDate(ts){ try{ return new Date(ts).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(_){ return ''; } }
-function iaRenderCards(insights,usage,at,from,to){
-  if(!insights.length){ iaShow('<div class="ia-empty">A IA não retornou insights.</div>'); return; }
-  const stamp = at ? `<div class="ia-empty" style="grid-column:1/-1;text-align:left">Gerado em ${iaFmtDate(at)}${from&&to?` · janela ${esc(from)} a ${esc(to)}`:''}</div>` : '';
-  const sev=s=>['alta','media','baixa'].includes(String(s))?s:'baixa';
-  const cards=insights.map(i=>{
-    const s=sev(i.severidade); let verba='';
-    if(i.verba && i.verba.acao && i.verba.acao!=='manter'){
-      const v=i.verba, pct=(v.percentual!=null?(' '+Math.abs(v.percentual)+'%'):'');
-      verba=`<div class="ins-verba">💰 <b>Verba:</b> ${esc(v.acao)}${pct} ${v.nivel_ajuste?('no '+esc(v.nivel_ajuste)):''}${v.observacao?(' — '+esc(v.observacao)):''}<span class="ins-apply">Peça no chat para eu aplicar no Meta Ads.</span></div>`;
-    }
-    return `<div class="ins-card sev-${s}">
-      <div class="ins-head"><span class="ins-badge">${esc(i.nivel||'funil')} · ${esc(i.metrica||'')}</span><span class="ins-sev">${esc(s)}</span></div>
-      <div class="ins-title">${esc(i.titulo||'')}</div>
-      <div class="ins-diag">${esc(i.diagnostico||'')}</div>
-      <div class="ins-rec"><b>Ação:</b> ${esc(i.recomendacao||'')}</div>
-      ${i.estrutura?`<div class="ins-struct">Estrutura: ${esc(i.estrutura)}</div>`:''}
-      ${verba}
-    </div>`;
-  }).join('');
-  const u = usage ? `<div class="ia-empty" style="grid-column:1/-1">Tokens: entrada ${usage.input_tokens||'?'} · saída ${usage.output_tokens||'?'}</div>` : '';
-  iaShow(stamp+cards+u);
-}
-function iaNormUrl(u){ u=(u||'').trim(); if(u && !/^https?:\/\//i.test(u)) u='https://'+u; return u; }
-async function iaGenerate(){
-  const backend=iaBackendUrl(), pass=localStorage.getItem('ia_pass');
-  if(!backend||!pass){ document.getElementById('iaConfig').style.display='block'; return; }
-  const btn=document.getElementById('iaGen'); btn.classList.add('loading'); btn.disabled=true;
-  iaShow('<div class="ia-empty">Gerando insights com a IA… (pode levar alguns segundos)</div>');
-  try{
-    const res=await fetch(backend,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pass,data:iaBuildData()})});
-    const txt=await res.text(); let j=null; try{ j=JSON.parse(txt); }catch{}
-    if(!j){ iaShow('<div class="ins-card err"><div class="ins-title">Resposta inválida do backend</div><div class="ins-diag">HTTP '+res.status+'. A URL do Worker pode estar errada ou o Worker não está publicado. Abra a URL no navegador: deve mostrar <code>{"error":"Use GET ou POST."}</code>.</div><div class="ins-struct">'+esc(txt.slice(0,200))+'</div></div>'); return; }
-    if(!res.ok || j.error){
-      const extra=[]; if(j.detail) extra.push(String(j.detail)); if(j.stop_reason) extra.push('stop_reason='+j.stop_reason); if(j.raw) extra.push('Resposta do modelo: '+String(j.raw));
-      iaShow('<div class="ins-card err"><div class="ins-title">Erro</div><div class="ins-diag">'+esc(j.error||('HTTP '+res.status))+'</div>'+(extra.length?('<div class="ins-struct" style="white-space:pre-wrap">'+esc(extra.join('\n').slice(0,1200))+'</div>'):'')+'</div>');
-    }
-    else {
-      iaRenderCards(j.insights||[], j.usage, j.at||Date.now(), j.from, j.to);
-    }
-  }catch(e){ iaShow('<div class="ins-card err"><div class="ins-title">Falha de rede</div><div class="ins-diag">'+esc(e.message)+' — a URL deve começar com https:// e terminar em .workers.dev, e o Worker precisa estar publicado (CORS).</div></div>'); }
-  finally{ btn.classList.remove('loading'); btn.disabled=false; }
-}
-async function iaLoadLatest(){
-  const backend=iaBackendUrl();
-  if(!backend){ iaShow('<div class="ia-empty">Configure o backend e clique em <b>Gerar insights</b>.</div>'); return; }
-  iaShow('<div class="ia-empty">Carregando insights…</div>');
-  try{
-    const res=await fetch(backend,{method:'GET'});
-    const j=await res.json().catch(()=>null);
-    if(j && Array.isArray(j.insights) && j.insights.length){ iaRenderCards(j.insights, j.usage, j.at, j.from, j.to); }
-    else { iaShow('<div class="ia-empty">Nenhum insight gerado ainda. Clique em <b>Gerar insights</b>.</div>'); }
-  }catch(e){ iaShow('<div class="ia-empty">Não foi possível carregar os insights agora. Clique em <b>Gerar insights</b>.</div>'); }
-}
-function renderIA(){ iaStatusText(); iaRenderWin(); iaLoadLatest(); }
 
 /* ---------------- date presets ---------------- */
 const PRESETS=[
@@ -789,13 +775,12 @@ function setPage(p){ STATE.page=p;
   document.getElementById('page-geral').classList.toggle('active',p==='geral');
   document.getElementById('page-meta').classList.toggle('active',p==='meta');
   document.getElementById('page-rel').classList.toggle('active',p==='rel');
-  document.getElementById('page-ia').classList.toggle('active',p==='ia');
-  document.getElementById('ptitle').textContent = p==='meta'?'Meta Ads':(p==='rel'?'Relatórios':(p==='ia'?'IA Insights':'Visão Geral'));
+  document.getElementById('ptitle').textContent = p==='meta'?'Meta Ads':(p==='rel'?'Insights de IA':'Visão Geral');
   document.getElementById('navToggle').checked=false;
   history.replaceState(null,'', '#'+p);
   renderAll();
 }
-function renderAll(){ if(STATE.page==='meta') renderMeta(); else if(STATE.page==='rel') renderRelatorios(); else if(STATE.page==='ia') renderIA(); else renderGeral(); }
+function renderAll(){ if(STATE.page==='meta') renderMeta(); else if(STATE.page==='rel') renderRelatorios(); else renderGeral(); }
 
 /* Tema ESCURO é o padrão; só fica claro se o usuário tiver escolhido 'light'. */
 function applyTheme(){ const t=localStorage.getItem('dm_theme'); if(t==='light') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme','dark'); }
@@ -816,20 +801,12 @@ document.getElementById('clearBtn').addEventListener('click',()=>{ STATE.mSelC.c
 document.getElementById('clearCampBtn').addEventListener('click',()=>{ STATE.mSelC.clear(); renderMeta(); });
 document.getElementById('clearAdsetBtn').addEventListener('click',()=>{ STATE.mSelA.clear(); renderMeta(); });
 document.getElementById('clearAdBtn').addEventListener('click',()=>{ STATE.mSelAd.clear(); renderMeta(); });
+/* busca por nome (campanha/conjunto/anúncio) — case/acento-insensitive, filtra as
+   linhas da própria tabela sem mexer nas outras nem no período selecionado */
+[['searchCamp','tCamp'],['searchAdset','tAdset'],['searchAd','tAd']].forEach(([inputId,key])=>{
+  document.getElementById(inputId).addEventListener('input',function(){ STATE.search[key]=this.value; renderMeta(); });
+});
 document.getElementById('refreshBtn').addEventListener('click',function(){ this.classList.add('loading'); location.href=location.pathname+'?t='+Date.now()+location.hash; });
-
-/* IA Insights config + geração */
-document.getElementById('iaCfgBtn').addEventListener('click',()=>{ const c=document.getElementById('iaConfig');
-  c.style.display = c.style.display==='none'?'block':'none';
-  document.getElementById('iaUrl').value=localStorage.getItem('ia_backend')||'';
-  document.getElementById('iaPass').value=localStorage.getItem('ia_pass')||''; });
-document.getElementById('iaSave').addEventListener('click',()=>{
-  const u=iaNormUrl(document.getElementById('iaUrl').value), p=document.getElementById('iaPass').value;
-  if(u) localStorage.setItem('ia_backend',u); else localStorage.removeItem('ia_backend');
-  if(p) localStorage.setItem('ia_pass',p); else localStorage.removeItem('ia_pass');
-  document.getElementById('iaCfgMsg').textContent='Salvo neste navegador ✓';
-  document.getElementById('iaConfig').style.display='none'; iaStatusText(); });
-document.getElementById('iaGen').addEventListener('click',iaGenerate);
 
 document.title=(B.client_sub?B.client_sub+' · ':'')+(B.client_name||'Dashboard');
 document.getElementById('logoMain').textContent=B.client_name||'—';
@@ -843,9 +820,9 @@ document.getElementById('updated').innerHTML='Última atualização:<br>'+B.gene
 document.getElementById('buildFoot').textContent='build __BUILD_ID__';
 document.getElementById('buildFoot2').textContent='· build __BUILD_ID__';
 
-syncDateInputs(); iaStatusText();
+syncDateInputs();
 document.getElementById('taxToggle').classList.toggle('on', STATE.tax);  /* imposto Meta ON por padrão */
-setPage(location.hash==='#meta'?'meta':(location.hash==='#rel'?'rel':(location.hash==='#ia'?'ia':'geral')));
+setPage(location.hash==='#meta'?'meta':(location.hash==='#rel'?'rel':'geral'));
 
 /* auto-refresh com cache-bust ~30 min */
 setTimeout(()=>{ location.href=location.pathname+'?t='+Date.now()+location.hash; }, 30*60*1000);

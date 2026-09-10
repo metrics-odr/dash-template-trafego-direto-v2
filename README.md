@@ -26,12 +26,16 @@ Como funciona, por dentro:
 3. Um commit na `main` dispara o GitHub Actions, que builda e publica no Pages.
 4. O `cron-job.org` chama o mesmo workflow a cada 30 min, então o dashboard fica
    sempre atualizado mesmo sem ninguém commitar nada (ver `SETUP-CRON.md`).
-5. Uma aba opcional de **IA Insights** manda o funil para um Cloudflare Worker que
-   chama a Claude e devolve uma análise (ver `SETUP-IA.md`).
+5. A última aba do menu ("Insights de IA") traz um card de **Saúde do funil**
+   (nota 0-100 calculada no navegador, sem IA) e o **Briefing do Gestor**
+   (texto pré-gerado 1×/dia por uma Routine — ver `CLAUDE.md`). Um backend de
+   geração de insights ao vivo (Cloudflare Worker) existe no repo como
+   infraestrutura opcional/legada, sem aba própria hoje — ver `SETUP-IA.md`.
 
 Nenhuma dessas peças exige servidor próprio ou banco de dados — tudo roda em
 serviços gratuitos (GitHub Pages, GitHub Actions, cron-job.org) mais,
-opcionalmente, o Cloudflare Workers (também com camada gratuita) para a IA.
+opcionalmente, o Cloudflare Workers (também com camada gratuita) caso o backend
+de IA legado seja reativado.
 
 ## Requisitos
 
@@ -44,8 +48,8 @@ opcionalmente, o Cloudflare Workers (também com camada gratuita) para a IA.
   para só publicar).
 - Uma conta gratuita em **[cron-job.org](https://cron-job.org)** (dispara o
   build a cada 30 min).
-- *Opcional* — para a aba **IA Insights**: conta na **Cloudflare** (Workers) e
-  uma chave de API da **Anthropic** (`sk-ant-...`).
+- *Opcional/legado* — só se for reativar a geração de insights ao vivo: conta
+  na **Cloudflare** (Workers) e uma chave de API da **Anthropic** (`sk-ant-...`).
 
 ## Como instalar (visão rápida)
 
@@ -56,7 +60,7 @@ opcionalmente, o Cloudflare Workers (também com camada gratuita) para a IA.
 3. Copie `config.example.js` → `config.js` e preencha os metadados do GitHub
    (veja "Como preencher o config.js" abaixo).
 4. Habilite o GitHub Pages e o cron-job.org (veja as seções correspondentes).
-5. *Opcional:* configure o Cloudflare Worker para a aba IA Insights.
+5. *Opcional/legado:* configure o Cloudflare Worker (ver "IA Insights (legado)" em `CLAUDE.md`).
 6. Teste localmente (opcional) e depois publique.
 
 Teste local do build (não é obrigatório — o Actions builda sozinho):
@@ -119,11 +123,14 @@ normalmente você não precisa mexer em nada manualmente. Para conferir/forçar:
    `COUNT_ALL_AS_PAID` (se a planilha não tiver uma coluna de status de
    pagamento confiável). Detalhes de cada campo nos comentários do arquivo.
 
-## Como configurar o Cloudflare Worker (aba IA Insights — opcional)
+## Como configurar o Cloudflare Worker (backend de IA — opcional/legado)
 
-A aba IA Insights não é obrigatória para o resto do dashboard funcionar — sem
-ela configurada, a aba simplesmente fica indisponível. Passo a passo completo,
-com prints e troubleshooting, está em **`SETUP-IA.md`**. Resumo:
+O dashboard não tem mais uma aba própria de geração de insights ao vivo (ver
+"IA Insights (legado)" em `CLAUDE.md`) — este Worker não é obrigatório para o
+resto do dashboard funcionar. Ele fica no repo como infraestrutura reaproveitável
+para quem quiser reativar a geração ao vivo (chamando o endpoint diretamente ou
+reintroduzindo uma UI). Passo a passo completo, com prints e troubleshooting,
+está em **`SETUP-IA.md`**. Resumo:
 
 1. Crie um Worker novo na Cloudflare ("Start from scratch") e cole o conteúdo
    de `ia-worker/worker.js`.
@@ -139,8 +146,9 @@ com prints e troubleshooting, está em **`SETUP-IA.md`**. Resumo:
    cria o KV namespace de persistência e aplica os secrets.
 6. Copie a URL pública do Worker (formato `https://SEU-WORKER.SEU-SUBDOMINIO.workers.dev`)
    para `IA_WORKER_URL` em `build/config.py` e dispare um novo build.
-7. Na aba **IA Insights** → **⚙ Configurar**, cole a senha (mesma de
-   `INSIGHTS_PASSWORD`) e clique em **Gerar insights** para testar.
+7. Teste chamando o endpoint diretamente (POST com `{"password":"...","data":{...}}`) —
+   sem uma aba própria na UI, use `curl`/Postman ou reintroduza a interface conforme a
+   necessidade do cliente.
 
 ## Como preencher o `config.js`
 
@@ -216,11 +224,10 @@ Vendas · **CAC** (Gasto/Vendas) · **ConvCHK** (Vendas/Checkouts) · Faturament
 - **Aba 2 — Meta Ads:** funil em etapas, combinado diário, faturamento por
   anúncio, tabela diária e 3 tabelas hierárquicas (Campanha → Conjunto → Anúncio) com
   **filtro cruzado**, além da lista de compradores.
-- **Aba 3 — Relatórios:** cards de visão geral/tráfego, tabela diária, visão por
-  campanha e Top/Piores anúncios, com briefing interpretativo pré-gerado por IA
-  (opcional — ver `build/GUIA-RELATORIOS.md`).
-- **Aba 4 — IA Insights:** análise por IA (Claude) do funil e das estruturas ativas,
-  com detecção de tendência/saturação e recomendações de verba. Ver `SETUP-IA.md`.
+- **Aba 3 — Insights de IA (relatórios):** card de **Saúde do funil** (nota 0-100,
+  calculada no navegador, ancorada em CAC/ROAS alvo), visão por campanha,
+  Top/Piores anúncios, cards de visão geral/tráfego e o **Briefing do Gestor**
+  interpretativo pré-gerado por IA 1×/dia (opcional — ver `build/GUIA-RELATORIOS.md`).
 
 Recursos: filtro global de data + presets, toggle de imposto, tema claro/escuro,
 tabelas com ordenação/redimensionamento/multi-seleção, cache-bust.
@@ -234,14 +241,14 @@ tabelas com ordenação/redimensionamento/multi-seleção, cache-bust.
 - `config.js` — metadados de publicação (usuário/repo do GitHub) usados como
   referência para os placeholders na documentação. Copie de `config.example.js`.
 - `.github/workflows/deploy.yml` — build + deploy no Pages.
-- `.github/workflows/deploy-worker.yml` — deploy automático do Worker da IA Insights.
+- `.github/workflows/deploy-worker.yml` — deploy automático do Worker de IA (opcional/legado).
 - `.github/workflows/gerar-relatorios-metrics.yml` — números da aba Relatórios.
-- `ia-worker/worker.js` — backend da aba IA Insights (engine, genérico).
+- `ia-worker/worker.js` — backend de IA opcional/legado (engine, genérico; não usado pela UI atual).
 - `ia-worker/wrangler.toml` — nome do Worker (preencher por cliente).
 - `GUIA-REPLICACAO.md` — arquitetura, CSS/JS e solução dos problemas de publicação.
 - `CLAUDE.md` — contexto do projeto + checklist de novo cliente.
 - `SETUP-CRON.md` — configuração do cron-job.org.
-- `SETUP-IA.md` — configuração da aba IA Insights (Cloudflare Worker).
+- `SETUP-IA.md` — configuração do backend de IA opcional/legado (Cloudflare Worker).
 - `LICENSE` — licença deste template.
 
 ## Privacidade

@@ -14,15 +14,15 @@
 <style>__STYLES__</style>
 </head>
 <body>
-<input type="checkbox" id="navToggle">
 <div id="app">
+  <input type="checkbox" id="navToggle">
+  <label class="nav-backdrop" for="navToggle"></label>
   <aside class="sidebar">
     <div class="logo"><div class="logo-main" id="logoMain"></div><div class="logo-sub" id="logoSub"></div></div>
     <div class="sec">Dashboards</div>
     <div class="nav-item active" data-page="geral"><span class="ic">◱</span> Visão Geral</div>
     <div class="nav-item" data-page="meta"><span class="ic">◨</span> Meta Ads</div>
-    <div class="nav-item" data-page="rel"><span class="ic">▤</span> Relatórios</div>
-    <div class="nav-item" data-page="ia"><span class="ic">✦</span> IA Insights</div>
+    <div class="nav-item" data-page="rel"><span class="ic">✦</span> Insights de IA</div>
     <div class="foot">Somente leitura · atualiza ~30 min<br><span id="buildFoot"></span></div>
   </aside>
 
@@ -116,17 +116,17 @@
 
         <h2 class="sec-title">Otimização · Campanha → Conjunto → Anúncio</h2>
         <div class="table-chart-pair">
-          <div class="thead-title"><span>Campanhas</span><button class="btn-mini" id="clearCampBtn" title="Remover só o filtro de campanha">✕ Filtro</button></div>
+          <div class="thead-title"><span>Campanhas</span><input type="text" class="tbl-search" id="searchCamp" placeholder="Buscar campanha..."><button class="btn-mini" id="clearCampBtn" title="Remover só o filtro de campanha">✕ Filtro</button></div>
           <div class="tbl-wrap tbl-normal"><table class="dt" id="tCamp"></table></div>
           <div class="pair-chart"><div class="pc-title">CAC por campanha, por dia</div><canvas id="chCamp"></canvas></div>
         </div>
         <div class="table-chart-pair">
-          <div class="thead-title"><span>Conjuntos (Ad Sets)</span><button class="btn-mini" id="clearAdsetBtn" title="Remover só o filtro de conjunto">✕ Filtro</button></div>
+          <div class="thead-title"><span>Conjuntos (Ad Sets)</span><input type="text" class="tbl-search" id="searchAdset" placeholder="Buscar conjunto..."><button class="btn-mini" id="clearAdsetBtn" title="Remover só o filtro de conjunto">✕ Filtro</button></div>
           <div class="tbl-wrap tbl-normal"><table class="dt" id="tAdset"></table></div>
           <div class="pair-chart"><div class="pc-title">CAC por conjunto, por dia</div><canvas id="chAdset"></canvas></div>
         </div>
         <div class="table-chart-pair">
-          <div class="thead-title"><span>Anúncios</span><button class="btn-mini" id="clearAdBtn" title="Remover só o filtro de anúncio">✕ Filtro</button></div>
+          <div class="thead-title"><span>Anúncios</span><input type="text" class="tbl-search" id="searchAd" placeholder="Buscar anúncio..."><button class="btn-mini" id="clearAdBtn" title="Remover só o filtro de anúncio">✕ Filtro</button></div>
           <div class="tbl-wrap tbl-double"><table class="dt" id="tAd"></table></div>
           <div class="pair-chart"><div class="pc-title">CAC por anúncio, por dia</div><canvas id="chAd"></canvas></div>
         </div>
@@ -138,7 +138,7 @@
         </div>
       </div>
 
-      <!-- ===================== PÁGINA: RELATÓRIOS ===================== -->
+      <!-- ===================== PÁGINA 3: INSIGHTS DE IA (relatórios) ===================== -->
       <div class="page" id="page-rel">
         <div class="rel-head">
           <div>
@@ -154,23 +154,31 @@
           </div>
         </div>
 
-        <h2 class="sec-title">Visão geral</h2>
-        <div class="rel-ov">
-          <div class="rel-ov-block">
-            <div class="rel-ov-head">Visão Geral Total <span>todas as vendas</span></div>
-            <div class="rel-cards" id="relCardsTotal"></div>
+        <h2 class="sec-title">Saúde do funil</h2>
+        <div class="health-card">
+          <div class="health-gauge">
+            <div class="health-ring" id="healthRing">
+              <div class="health-ring-inner">
+                <div class="health-score" id="healthScore">--</div>
+                <div class="health-score-lbl">de 100</div>
+              </div>
+            </div>
           </div>
-          <div class="rel-ov-block">
-            <div class="rel-ov-head">Visão Geral Tráfego <span>apenas Meta Ads</span></div>
-            <div class="rel-cards" id="relCardsAds"></div>
+          <div class="health-body">
+            <div class="health-top">
+              <h3 class="health-title">Saúde do funil</h3>
+              <span class="health-badge" id="healthBadge">--</span>
+              <span class="health-desc" id="healthDesc">ancorado na meta de CAC</span>
+            </div>
+            <div class="health-goal">
+              <label for="healthGoalInput">Meta de CAC</label>
+              <div class="health-goal-input"><span id="healthGoalCur">R$</span><input type="number" id="healthGoalInput" min="0" step="0.01" inputmode="decimal"></div>
+              <span class="health-goal-hint">as demais metas usam o histórico da conta</span>
+            </div>
+            <div class="health-bars" id="healthBars"></div>
           </div>
         </div>
-
-        <h2 class="sec-title">Funil dia a dia</h2>
-        <div class="card" style="padding:0">
-          <div class="tbl-wrap tbl-normal"><table class="dt rel-dt" id="relDaily"></table></div>
-          <p class="note" style="padding:10px 15px">Total = todas as vendas · Ads = só Meta Ads (separados pela barra vertical). <b>CAC</b> e <b>ROAS</b> com <b>código de cor</b> conforme a meta. Último dia no topo.</p>
-        </div>
+        <p class="note" id="healthNote">A saúde combina o <b>ROAS</b> (lucratividade — meta em <code>build/config.py</code>, maior peso da nota: um funil só é saudável se dá lucro) com o <b>CAC</b> (meta editável ao lado) e os pisos de conversão de cada etapa — <b>CTR</b>, <b>CR</b> (Page Views/Cliques), <b>VisCHK</b> (Checkouts/Page Views) e <b>ConvCHK</b> (Vendas/Checkouts) — estipulados a partir do histórico da conta (85% da taxa histórica).</p>
 
         <h2 class="sec-title">Visão por campanha</h2>
         <div class="card" style="padding:0">
@@ -189,35 +197,23 @@
             <div class="tbl-wrap"><table class="dt rel-dt" id="relWorst"></table></div>
           </div>
         </div>
-        <p class="note">Ranqueados por ROAS (e CAC como desempate) entre anúncios com gasto relevante no período. Link abre o criativo no Instagram.</p>
+        <p class="note">Ranqueados por ROAS (e CAC como desempate) entre anúncios com gasto relevante no período. Top 5 exige um mínimo de 3 vendas no período. Link abre o criativo no Instagram.</p>
+
+        <h2 class="sec-title">Visão geral</h2>
+        <div class="rel-ov">
+          <div class="rel-ov-block">
+            <div class="rel-ov-head">Visão Geral Total <span>todas as vendas</span></div>
+            <div class="rel-cards" id="relCardsTotal"></div>
+          </div>
+          <div class="rel-ov-block">
+            <div class="rel-ov-head">Visão Geral Tráfego <span>apenas Meta Ads</span></div>
+            <div class="rel-cards" id="relCardsAds"></div>
+          </div>
+        </div>
 
         <h2 class="sec-title">Briefing do Gestor</h2>
         <div class="rel-brief" id="relBrief"></div>
         <p class="note" id="relBriefStamp"></p>
-      </div>
-
-      <!-- ===================== PÁGINA 3: IA INSIGHTS ===================== -->
-      <div class="page" id="page-ia">
-        <h2 class="sec-title">IA Insights</h2>
-        <div class="card">
-          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap">
-            <button class="btn primary" id="iaGen"><span class="spin">✦</span> Gerar insights</button>
-            <div class="chips" id="iaWin" style="display:flex;gap:6px"></div>
-            <button class="btn" id="iaCfgBtn">⚙ Configurar</button>
-            <span class="hint" id="iaStatus" style="margin:0"></span>
-          </div>
-          <div class="ia-config" id="iaConfig" style="display:none">
-            <p class="hint" style="margin:6px 0">Os insights já ficam salvos no Worker (Cloudflare) e aparecem para <b>qualquer visitante</b>, em qualquer navegador, sem configurar nada. Para <b>gerar novos insights</b> é preciso a senha (a mesma do secret <code>INSIGHTS_PASSWORD</code>) — fica salva só neste navegador. Só preencha "Worker URL" se quiser apontar para outro backend; o padrão já vem embutido no build. Passo a passo em <b>SETUP-IA.md</b>.</p>
-            <div class="ia-fields">
-              <label>Worker URL (opcional)<input id="iaUrl" placeholder="https://nomecliente-ia-insights.xxx.workers.dev"></label>
-              <label>Senha<input id="iaPass" type="password" placeholder="senha do Worker"></label>
-              <button class="btn primary" id="iaSave">Salvar</button>
-            </div>
-            <span class="hint" id="iaCfgMsg" style="display:block; margin-top:6px"></span>
-          </div>
-          <p class="note">Análise feita por IA (Claude) do <b>funil</b> e das <b>estruturas ativas</b> — CPM, CTR, CR, VisCHK, ConvLP, ConvCHK, CAC, ROAS, Ticket. A janela acima (independente do filtro das outras abas) define o histórico usado para detectar <b>tendência/saturação</b> (compara a metade recente vs a anterior). Sinaliza gargalos e destaques; recomendações de verba consideram <b>ABO (conjunto)</b> e <b>CBO (campanha)</b>. Aplicação de verba: peça no chat que eu executo no Meta. Cada clique em "Gerar insights" = 1 chamada à IA, e o resultado substitui o anterior para todo mundo.</p>
-        </div>
-        <div id="iaCards" class="ia-cards"><div class="ia-empty">Carregando insights…</div></div>
       </div>
 
       <div class="foot">Atualizado automaticamente a cada ~30 min via GitHub Actions + cron‑job.org. Somente leitura das planilhas. <span id="buildFoot2"></span></div>

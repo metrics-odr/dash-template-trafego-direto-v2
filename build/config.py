@@ -46,6 +46,25 @@ MAIN_PRODUCT_PREFIX = ""   # ex.: "nome do produto" (produto "Nome do Produto")
 # deixe True para contar todas as linhas como venda paga.
 COUNT_ALL_AS_PAID = True
 
+# Upsell/downsell pós-compra (OPCIONAL) — deixe UPSELL_PRODUCT_PREFIX vazio se
+# o funil não tiver esse tipo de oferta. Alguns funis oferecem, logo após a
+# compra do produto principal, um upsell e, se recusado, um downsell mais
+# barato do MESMO produto — na planilha os dois aparecem com o texto IDÊNTICO
+# na coluna "Produto" (não dá pra diferenciar pelo nome). Preenchendo os
+# campos abaixo, o build separa as duas ofertas em linhas próprias no painel
+# "Vendas por produto" usando o VALOR da venda como critério (a oferta mais
+# cara = upsell, a mais barata = downsell); ambas entram no Faturamento/ROAS
+# do funil, mas NÃO contam para Vendas/CAC/ConvCHK/Ticket (que são só do
+# produto principal — ver MAIN_PRODUCT_PREFIX acima). Essas vendas são
+# atribuídas ao funil pelo nome do produto (não precisam bater UTM com uma
+# linha do Meta Ads) porque o upsell/downsell costuma não carregar UTM
+# própria; por isso só entram nos totais gerais (aba Visão Geral), não nos
+# paineis filtrados "só Meta Ads" quando não há UTM correspondente.
+UPSELL_PRODUCT_PREFIX = ""   # ex.: "nome do upsell" (mesmo texto p/ as 2 ofertas)
+UPSELL_SPLIT_VALUE = 0.0     # valor que separa upsell de downsell: venda >= este valor = upsell, < = downsell
+UPSELL_USL_LABEL = ""        # ex.: "Nome do Upsell (USL)" — rótulo de exibição da oferta mais cara
+UPSELL_DSL_LABEL = ""        # ex.: "Nome do Upsell (DSL)" — rótulo de exibição da oferta mais barata
+
 # ==========================================================================
 # 3) RÓTULOS EXIBIDOS NA INTERFACE
 # ==========================================================================
@@ -70,8 +89,9 @@ REPORT_BAND_HIGH = 1.30
 # ==========================================================================
 # 5) IA INSIGHTS (Cloudflare Worker) — ver SETUP-IA.md
 # ==========================================================================
-# URL pública do Worker (não é secreta — o navegador chama esse endereço
-# para ler/gerar insights). Deixe em branco até publicar o Worker (passo 7-10
-# do checklist em CLAUDE.md); a aba IA Insights simplesmente fica
-# indisponível enquanto este campo estiver vazio.
+# URL pública do Worker (não é secreta). O dashboard não tem mais uma aba de
+# geração de insights ao vivo (foi substituída pelo card "Saúde do funil" e
+# pelo Briefing do Gestor pré-gerado — ver "Aba Relatórios" em CLAUDE.md);
+# este campo fica embutido no build só para compatibilidade com o Worker/
+# infraestrutura de IA (ver SETUP-IA.md), caso seja reaproveitado no futuro.
 IA_WORKER_URL = ""   # ex.: "https://SEU-WORKER.SEU-SUBDOMINIO.workers.dev"
